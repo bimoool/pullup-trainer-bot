@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import baseline_confirm_keyboard
+from app.bot.keyboards import baseline_confirm_keyboard, gender_keyboard
 from app.bot.parsing import MAX_REPS
 from app.bot.states import OnboardingStates
 from app.db.repositories.users import UserRepository
@@ -79,7 +79,10 @@ async def handle_baseline_confirm(callback: CallbackQuery, state: FSMContext, se
     else:
         await callback.message.answer(texts.MOTIVATION_AFTER_BASELINE_HIGH.format(reps=reps))
 
-    await state.set_state(OnboardingStates.waiting_for_weight)
+    await state.set_state(OnboardingStates.waiting_for_gender)
     await callback.message.answer(texts.WELCOME_AFTER_BASELINE.format(reps=reps))
-    await callback.message.answer(texts.QUESTIONNAIRE_WEIGHT_PROMPT)
+    await callback.message.answer(
+        texts.QUESTIONNAIRE_OPTIONAL_GENDER_PROMPT,
+        reply_markup=gender_keyboard(skip_callback="qnr_skip:gender"),
+    )
     await callback.answer()

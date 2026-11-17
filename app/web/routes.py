@@ -83,7 +83,7 @@ from app.domain.training_session_v2 import SessionOrigin
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
-from app.services.plan_spacing import MainSpacingService
+from app.services.plan_spacing import MainSpacingService, gap_readiness
 from app.services.program_access import ProgramAccessService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -213,7 +213,9 @@ async def hello(
             is_admin=is_admin,
         )
 
-    readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
+    now = datetime.now(UTC)
+    spacing = await MainSpacingService(session).status(user, now=now)
+    readiness = gap_readiness(spacing) or check_training_readiness(history[-1].performed_at.date(), now.date())
     return HelloResponse(
         name=name, onboarding_step="done",
         readiness_status=readiness.status.value,
@@ -247,7 +249,11 @@ async def get_dashboard(
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     streak = consecutive_streak_length([record.performed_at.date() for record in history])
-    days_since_last_workout = (now.date() - history[-1].performed_at.date()).days if history else None
+    # Та же точка отсчёта, что у перерыва/отдыха (legacy + нативные сессии), не только legacy-таблица.
+    spacing = await MainSpacingService(session).status(user, now=now)
+    days_since_last_workout = (
+        (spacing.today - spacing.last_start_date).days if spacing.last_start_date is not None else None
+    )
 
     return DashboardResponse(
         status=context.status,
@@ -285,7 +291,8 @@ async def submit_onboarding_baseline(
     users = UserRepository(session)
     user = await users.get_by_telegram_id(telegram_id)
     if user is None:
-        user = await users.create(telegram_id=telegram_id, username=getattr(init_data.user, "username", None))
+        # Account identity is the Telegram ID; do not collect the optional public handle.
+        user = await users.create(telegram_id=telegram_id)
 
     await OnboardingService(session).record_baseline_and_start(
         user_id=user.id, performed_at=datetime.now(UTC), reps=body.reps,
@@ -307,20 +314,12 @@ async def submit_onboarding_questionnaire(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OnboardingQuestionnaireResponse:
-    """Анкета (issue #124, PR 2) — тот же OnboardingService.
-    complete_questionnaire_and_start_trial, что handle_timezone бота вызывает
-    последним шагом анкеты (app/bot/handlers/questionnaire.py): пишет профиль,
-    отмечает онбординг завершённым, стартует триал. Таймзона — не свободный
-    ввод города, как в боте (там нераспознанный город молча становится
-    Москвой, см. app/bot/timezones.py — неприемлемо для явного выбора в
-    форме), а выбор из GET /api/profile/timezone-options (issue #125,
-    Intl.DateTimeFormat на фронтенде только предзаполняет значение по
-    умолчанию) — осознанное расхождение с ботом, согласовано в issue.
+    """Complete minimal onboarding through the same service as the bot.
 
-    404, если User ещё нет вообще (baseline не пройден) — в Mini App
-    недостижимо вживую (App.tsx не даст дойти до этого экрана раньше
-    /api/onboarding/baseline), но дешевле проверить на сервере, чем
-    считать чужой ввод валидным."""
+    Timezone is explicit; gender and birth date are voluntary. Old weight/height
+    fields are not persisted even when an older client submits them. Omitting
+    optional fields preserves existing profile/history. No trial rules change.
+    """
     users = UserRepository(session)
     user = await users.get_by_telegram_id(init_data.user.id)
     if user is None:
@@ -329,9 +328,7 @@ async def submit_onboarding_questionnaire(
     now = datetime.now(UTC)
     await OnboardingService(session).complete_questionnaire_and_start_trial(
         user_id=user.id,
-        weight_kg=body.weight_kg,
-        height_cm=body.height_cm,
-        gender=Gender(body.gender),
+        gender=Gender(body.gender) if body.gender is not None else None,
         birth_date=body.birth_date,
         timezone=body.timezone,
         now=now,
@@ -527,10 +524,12 @@ async def update_profile(
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
 
+    if body.height_cm is not None and body.height_cm != user.height_cm:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
+
     await users.update_profile(
         user.id,
         weight_kg=body.weight_kg,
-        height_cm=body.height_cm,
         gender=Gender(body.gender) if body.gender is not None else None,
         birth_date=body.birth_date,
         timezone=body.timezone,
@@ -777,7 +776,7 @@ async def _resolve_plan_context(
         )
 
     is_admin = settings.is_admin(telegram_id)
-    readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+    readiness = gap_readiness(spacing) or check_training_readiness(history[-1].performed_at.date(), now.date())
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 
@@ -2250,6 +2249,8 @@ async def add_body_metric(
 ) -> BodyMetricHistoryResponse:
     """«Добавить замер»: последний замер зеркалится в User.weight_kg/height_cm."""
     user_id = await _current_user_id(init_data, session)
+    if body.metric == "height_cm":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
     history = BodyMetricRepository(session)
     await history.add(user_id, BodyMetric(body.metric), body.value, body.measured_at)
     return await _body_metric_history(history, user_id, BodyMetric(body.metric))
@@ -2268,6 +2269,8 @@ async def update_body_metric(
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
     metric = BodyMetric(entry.metric)
+    if metric is BodyMetric.HEIGHT_CM:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
     if body.value is not None:
         try:
             BodyMetricCreateRequest(metric=metric.value, value=body.value)

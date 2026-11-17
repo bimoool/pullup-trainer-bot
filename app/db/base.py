@@ -8,5 +8,7 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_async_engine(settings.database_url)
+# SQLAlchemy exceptions are logged and may be forwarded to admin notifications.
+# Bound values can contain profile data and private workout/support notes.
+engine = create_async_engine(settings.database_url, hide_parameters=True)
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

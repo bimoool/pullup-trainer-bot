@@ -4,8 +4,19 @@ import { test } from "node:test";
 import {
   assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseBlockName, courseInputsPayload, courseTargetText, describeCourseOutcome,
   describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, describeBaselineQualification,
-  describeCourseError, loadStepWarning, courseSetupLayout, describeSetupSteps, ONBOARDING_WEIGHT_HINT,
+  describeCourseError, loadStepWarning, courseSetupLayout, describeSetupSteps, ONBOARDING_WEIGHT_HINT, courseBlockLoadText,
 } from "../src/courseV5.ts";
+
+test("live: prescribed external load, bodyweight and assistance are explicit", () => {
+  assert.equal(courseBlockLoadText({ external_load_kg: "10", assistance: null }), "+10 кг");
+  assert.equal(courseBlockLoadText({ external_load_kg: "20", assistance: null }), "+20 кг");
+  assert.equal(courseBlockLoadText({ external_load_kg: "0" }), "Свой вес");
+  assert.equal(courseBlockLoadText({ assistance: { kind: "bodyweight" } }), "Свой вес");
+  assert.equal(courseBlockLoadText({ assistance: { kind: "band", name: "Band", colour: "Blue", attachment: "Bar", body_position: "Knee" } }), "Резина: Band · Blue · Bar · Knee");
+  assert.equal(courseBlockLoadText({}), null);
+  assert.equal(courseBlockLoadText({ external_load_kg: "invalid" }), null);
+  assert.equal(courseBlockLoadText({ external_load_kg: "10" }, "lb"), "+22 фунт.");
+});
 
 test("courseTargetText: маркеры V5.6", () => {
   assert.equal(courseTargetText({ value: "17", marker: "amrap" }), "Максимум чистых, не меньше 17");

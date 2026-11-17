@@ -8,30 +8,14 @@ name: Tests
 # Этот workflow закрывает дыру: любой PR и любой push в main проверяется
 # автоматически, до того как ветку кто-то смержит или задеплоит.
 
-# ВАЖНО про расход минут: репозиторий приватный, минуты GitHub Actions
-# платные. Поэтому только `pull_request` — без дублирующего прогона на push
-# в main (тот же код уже проверен в PR), и с path-фильтрами: правка одной
-# документации не должна поднимать Postgres и ставить зависимости.
+# Every PR reports named checks. Only verified Markdown-only changes skip heavy jobs;
+# incomplete API data or an unknown path runs the full gate. See ci-changed-paths.yml.
 on:
   pull_request:
-    paths:
-      - "app/**"
-      - "tests/**"
-      - "scripts/**"
-      - "webapp-frontend/**"
-      - "contracts/**"
-      - "alembic.ini"
-      - "pyproject.toml"
-      - ".github/workflows/tests.yml"
-      # Выкатываемый SHA обязан иметь зелёный CI (production-deploy.yml) — изменения deploy-скриптов и
-      # workflow выката тоже прогоняют тесты (tests/test_scripts проверяет guarded-скрипты и диспетчер).
-      - "deploy/**"
-      - "docker-compose*.yml"
-      - "Dockerfile"
-      - ".github/workflows/production-*.yml"
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # Новый push в ту же ветку отменяет предыдущий прогон — не жечь раннеры
@@ -40,7 +24,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changed-paths.yml
+
   lint:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: ruff
     runs-on: ubuntu-latest
     steps:
@@ -49,12 +38,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev,web]"
+      - run: bash scripts/install-python.sh dev
       - run: ruff check app/ tests/ scripts/
       - run: ruff format --check app/ tests/ scripts/
         continue-on-error: true
 
   pytest:
+    needs: [changes, python-locks]
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: pytest
     runs-on: ubuntu-latest
     services:
@@ -82,20 +73,27 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test
       BOT_TOKEN: ci-test-token
     steps:
+      - name: Require successful dependency matrix
+        run: test '${{ needs.python-locks.result }}' = success
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev,web]"
+      - run: bash scripts/install-python.sh dev
       # Миграции отдельным шагом НЕ нужны: tests/conftest.py сам создаёт
       # pullup_test и накатывает на неё `alembic upgrade head`
       # (фикстура test_dsn). Отдельный шаг здесь только падал, потому что
       # целевой базы на тот момент ещё не существует.
       - name: Run tests
-        run: pytest -q --maxfail=20
+        run: |
+          pytest -q --maxfail=20
+          python -m scripts.e2e_seed ready 936600
+          pytest -q --maxfail=20
 
   frontend:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: frontend build
     runs-on: ubuntu-latest
     steps:
@@ -117,3 +115,49 @@ jobs:
       - name: Live Engine v2 shared vectors (vitest)
         working-directory: webapp-frontend
         run: npm run test:vectors
+      - name: Install staging harness test dependencies
+        working-directory: webapp-frontend/e2e-staging
+        run: npm ci
+      - name: Typecheck staging harness
+        working-directory: webapp-frontend/e2e-staging
+        run: npm run typecheck
+      - name: Staging browser platform contracts (no browser or credentials)
+        working-directory: webapp-frontend/e2e-staging
+        env:
+          STAGING_URL: https://staging.example.invalid
+          STAGING_PROJECT: iphone-webkit,chromium-mobile
+        run: npx playwright test 00-platform-contract --reporter=list --output="$RUNNER_TEMP/qa-platform-contract"
+
+  python-locks:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
+    name: Python locks (${{ matrix.os }}, ${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        mode: [runtime, web, dev]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - name: Two clean installations must agree
+        shell: bash
+        run: |
+          for attempt in 1 2; do
+            python -m venv "$RUNNER_TEMP/lock-$attempt"
+            PYTHON="$RUNNER_TEMP/lock-$attempt/bin/python" bash scripts/install-python.sh '${{ matrix.mode }}'
+            "$RUNNER_TEMP/lock-$attempt/bin/python" -m pip freeze --exclude-editable | sort > "$RUNNER_TEMP/freeze-$attempt.txt"
+          done
+          diff -u "$RUNNER_TEMP/freeze-1.txt" "$RUNNER_TEMP/freeze-2.txt"
+          "$RUNNER_TEMP/lock-1/bin/python" -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/wheels" .
+      - name: Regeneration must leave locks unchanged
+        if: matrix.os == 'ubuntu-latest' && matrix.mode == 'dev'
+        run: |
+          python -m pip install uv==0.13.4
+          bash scripts/lock-python.sh
+          git diff --exit-code -- requirements/

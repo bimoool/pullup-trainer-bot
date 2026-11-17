@@ -62,7 +62,8 @@ async def handle_start(message: Message, state: FSMContext, session: AsyncSessio
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
     if user is None:
-        user = await users.create(telegram_id=message.from_user.id, username=message.from_user.username)
+        # Account identity is the Telegram ID; do not collect the optional public handle.
+        user = await users.create(telegram_id=message.from_user.id)
     await _go_home(message, state, user)
 
 

@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot.formatting import format_equipment_label
 from app.config import settings
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.domain.constants import EquipmentType
 from app.domain.course_prescription import normalize_progression_state, resolve_progression_block
@@ -41,8 +40,8 @@ from app.domain.pullups_v5 import (
     is_v5_state,
     prescribe_session,
 )
-from app.domain.rules import TrainingReadiness, check_training_readiness
-from app.services.plan_spacing import MainSpacingService
+from app.domain.rules import TrainingReadiness
+from app.services.plan_spacing import MainSpacingService, gap_readiness
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2_dashboard import (
@@ -162,9 +161,9 @@ async def get_dashboard_status(
     spacing = await MainSpacingService(session).status(user, now=datetime.now(UTC))
     if spacing.too_early and not is_admin:
         return DashboardStatusResponse(status="too_early", available_from=spacing.available_from)
-    last_sessions = await TrainingSessionRepository(session).list_for_user(user.id, limit=1)
-    if last_sessions:
-        readiness = check_training_readiness(last_sessions[0].performed_at.date(), datetime.now(UTC).date())
+    # Перерыв — от того же «последнего старта MAIN», что и отдых K1 и legacy /api/dashboard (один источник).
+    readiness = gap_readiness(spacing)
+    if readiness is not None:
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
             return DashboardStatusResponse(status="gap_retest_required")
         is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK

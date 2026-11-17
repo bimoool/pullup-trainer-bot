@@ -1,0 +1,613 @@
+"""Owner-comment adapter for fixed guarded workflows; never execute PR code here."""
+
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+from datetime import UTC, datetime, timedelta
+
+import incident_r3_recovery as incident
+import rollback_r1_recovery as r1
+from current_checks import CheckRefused, ensure_green
+from incident_diagnostics import Trace
+
+REPO = "bimoool/pullup-trainer-bot"
+WORKFLOW = "deploy-staging-guarded.yml"
+DISPATCHER = ".github/workflows/cloud-command-dispatch.yml"
+BOT_ID = 41898282  # github-actions[bot] on github.com
+PROTECTED_PRS = {372, 374}
+REQUIRED_CHECKS = {
+    "ruff",
+    "pytest",
+    "frontend build",
+    "e2e",
+    "codex-review",
+    "security",
+    "rehearse",
+}
+
+
+def command(body):
+    controller = re.fullmatch(r"/pullup server-adopt-controller ([0-9a-f]{40})", body)
+    if controller:
+        return (
+            "server-adopt-controller",
+            controller[1],
+            "controller-control.yml",
+            {"operation": "adopt", "candidate_sha": controller[1], "operation_id": ""},
+        )
+    if body.startswith("/pullup rollback-r1-apply "):
+        sha, inputs = r1.parse(body, require)
+        return "rollback-r1-apply", sha, "production-rollback.yml", inputs
+    if body == incident.REDELIVERY_COMMAND:
+        return (
+            "incident-r3-redeliver",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    if body == incident.RECOVERY_COMMAND:
+        return (
+            "incident-r3-recover",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    if body == incident.COMMAND:
+        return (
+            "incident-r3-apply",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    recovery = re.fullmatch(
+        r"/pullup server-prepare-recover ([0-9a-f]{40}) ([1-9][0-9]{0,19})", body
+    )
+    if recovery:
+        sha, original = recovery.groups()
+        return (
+            "server-prepare",
+            sha,
+            "server-control.yml",
+            {
+                "operation": "prepare",
+                "candidate_sha": sha,
+                "operation_id": "ops-" + original,
+                "request_comment_id": original,
+                "recovery_comment_id": "",
+            },
+        )
+    control = re.fullmatch(
+        r"/pullup server-(readiness|prepare|restore|receipt|adopt-runner) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
+        body,
+    )
+    if control:
+        action, sha, operation_id = control.groups()
+        require(
+            (action == "receipt") == (operation_id is not None),
+            "receipt ID required only for reconciliation",
+        )
+        return (
+            "server-" + action,
+            sha,
+            "server-control.yml",
+            {"operation": action, "candidate_sha": sha, "operation_id": operation_id or ""},
+        )
+    match = re.fullmatch(
+        r"/pullup (staging-preflight|staging-snapshot|staging-deploy|staging-qa|production-preflight|production-apply|rehearse|rollback-check) "
+        r"([0-9a-f]{40})(?: ([0-9a-f]{12}) ([0-9a-f]{12})(?: (PRODUCTION-APPLY-[0-9a-f]{12}))?"
+        r"| (R[13]) (/root/backups/[A-Za-z0-9._-]+\.manifest))?",
+        body,
+    )
+    require(match is not None, "unsupported command")
+    operation, sha, from_rev, to_rev, confirm, kind, manifest = match.groups()
+    if operation.startswith("production-"):
+        require(from_rev is not None and kind is None, "observed revisions required")
+        if operation == "production-apply":
+            require(confirm == f"PRODUCTION-APPLY-{sha[:12]}", "exact confirmation required")
+        else:
+            require(confirm is None, "preflight does not accept confirmation")
+        return (
+            operation,
+            sha,
+            "production-deploy.yml",
+            {
+                "sha": sha,
+                "mode": operation.removeprefix("production-"),
+                "from_rev": from_rev,
+                "to_rev": to_rev,
+                "confirm": confirm or "",
+            },
+        )
+    if operation == "rollback-check":
+        require(kind is not None and ".." not in manifest, "safe manifest required")
+        return (
+            operation,
+            sha,
+            "production-rollback.yml",
+            {"kind": kind, "manifest": manifest, "mode": "check", "confirm": ""},
+        )
+    require(from_rev is None and kind is None, "extra arguments forbidden")
+    if operation == "staging-snapshot":
+        return operation, sha, "staging-snapshot.yml", {"candidate_sha": sha}
+    if operation == "staging-qa":
+        return (
+            operation,
+            sha,
+            "release-qa.yml",
+            {"candidate_sha": sha},
+        )
+    if operation == "rehearse":
+        return operation, sha, "rehearsal-harness.yml", {}
+    return (
+        operation,
+        sha,
+        WORKFLOW,
+        {
+            "sha": sha,
+            "converge": "preflight" if operation == "staging-preflight" else "dry-run",
+            "start": "no" if operation == "staging-preflight" else "yes",
+            "users": "-",
+        },
+    )
+
+
+def green_checks(api, sha, rehearsal=True):
+    required = REQUIRED_CHECKS if rehearsal else REQUIRED_CHECKS - {"rehearse"}
+    try:
+        ensure_green(api, sha, required)
+    except CheckRefused as exc:
+        raise Refused(str(exc)) from None
+
+
+def successful_run(api, workflow, title, *, latest_deployment=False):
+    # Titles are generated by reviewed workflows from their validated inputs, not PR text.
+    # Use the newest matching main-dispatched run; a newer failure must block an older success.
+    for page in range(1, 11):
+        runs = api(
+            "GET",
+            f"actions/workflows/{workflow}/runs?event=workflow_dispatch&branch=main&per_page=100&page={page}",
+        )["workflow_runs"]
+        for run in runs:
+            if latest_deployment and re.fullmatch(
+                r"Guarded staging [0-9a-f]{40} (?:dry-run|apply) (?:yes|no)",
+                run.get("display_title", ""),
+            ):
+                require(run["display_title"] == title, "staging was changed by another deployment")
+            if run.get("display_title") == title:
+                require(
+                    run.get("head_branch") == "main" and run.get("event") == "workflow_dispatch",
+                    "wrong evidence origin",
+                )
+                require(
+                    run.get("status") == "completed" and run.get("conclusion") == "success",
+                    "evidence run not successful",
+                )
+                return run
+        if len(runs) < 100:
+            break
+    raise Refused("no attributed workflow evidence")
+
+
+def unchanged_staging(api, deployed):
+    # Both deployment entry points can replace staging, on any dispatch ref.
+    # Even a failed/in-progress attempt invalidates evidence: SSH may already have run.
+    # Job start is after workflow concurrency admission; run.created_at includes
+    # time queued behind the preceding deployment. Latest-attempt jobs only.
+    jobs = api("GET", f"actions/runs/{deployed['id']}/jobs?filter=latest&per_page=100")
+    require(
+        jobs.get("total_count") == 1 and len(jobs.get("jobs", [])) == 1,
+        "unexpected staging deployment job topology",
+    )
+    started_at = jobs["jobs"][0].get("started_at")
+    require(isinstance(started_at, str) and bool(started_at), "missing deployment execution time")
+    for workflow in (WORKFLOW, "deploy-staging.yml"):
+        for page in range(1, 101):
+            runs = api(
+                "GET",
+                f"actions/workflows/{workflow}/runs?per_page=100&page={page}",
+            )["workflow_runs"]
+            for run in runs:
+                if run.get("id") == deployed.get("id") and workflow == WORKFLOW:
+                    continue
+                if workflow == WORKFLOW and re.fullmatch(
+                    r"Guarded staging [0-9a-f]{40} preflight (?:yes|no)",
+                    run.get("display_title", ""),
+                ):
+                    continue
+                # created_at survives reruns. Scan every page, since rerunning an
+                # old run does not move it forward in creation-ordered results.
+                require(
+                    run.get("updated_at", "9999") < started_at,
+                    "staging evidence invalidated by another deployment attempt",
+                )
+            if len(runs) < 100:
+                break
+        else:
+            raise Refused("staging deployment history exceeds evidence scan limit")
+
+
+def release_gates(api, operation, sha, inputs):
+    if operation == "rollback-r1-apply":
+        r1.verify_evidence(api, sha, inputs, require, BOT_ID)
+        return
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            sha == incident.CANDIDATE
+            and all(inputs.get(k) == v for k, v in incident.fixed_inputs().items()),
+            "fixed incident inputs required",
+        )
+        incident.verify_evidence(api, require)
+        if operation == "incident-r3-redeliver":
+            incident.verify_redelivery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_redelivery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
+        elif operation == "incident-r3-recover":
+            incident.verify_recovery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_recovery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
+        else:
+            rows = incident.comments(api, require)
+            incident.no_manual_execution(rows, api("GET", "")["owner"], require)
+            incident.no_redelivery(rows, require)
+        return
+    if operation.startswith("server-"):
+        if operation == "server-adopt-controller":
+            from controller_control_client import adoption_gates
+
+            adoption_gates(api, sha)
+            return
+        if operation not in {"server-readiness", "server-receipt"}:
+            green_checks(api, sha)
+        if operation == "server-adopt-runner":
+            candidate = api("GET", f"git/commits/{sha}")
+            main = api("GET", "commits/main")
+            require(
+                candidate["tree"]["sha"] == main["commit"]["tree"]["sha"],
+                "candidate must equal trusted main tree",
+            )
+        return  # metadata/fetch/isolated restore never execute candidate app code or deploy
+    if operation in {"staging-preflight", "staging-snapshot"}:
+        return
+    if operation == "rollback-check":
+        return  # read-only recovery inspection must remain available after a failed deployment
+    green_checks(api, sha, rehearsal=operation != "rehearse")
+    if operation == "rehearse":
+        return
+    candidate = api("GET", f"git/commits/{sha}")
+    main = api("GET", "commits/main")
+    require(
+        candidate["tree"]["sha"] == main["commit"]["tree"]["sha"],
+        "candidate must equal trusted main tree",
+    )
+    if operation in {"staging-qa", "production-apply"}:
+        deployed = successful_run(
+            api, WORKFLOW, f"Guarded staging {sha} dry-run yes", latest_deployment=True
+        )
+        unchanged_staging(api, deployed)
+        if operation == "production-apply":
+            qa = successful_run(api, "release-qa.yml", f"Release QA {sha} full-v2")
+            require(qa["created_at"] >= deployed["updated_at"], "QA predates staging deployment")
+            preflight = successful_run(
+                api,
+                "production-deploy.yml",
+                f"Guarded production {sha} preflight {inputs['from_rev']} {inputs['to_rev']}",
+            )
+            require(preflight["created_at"] >= qa["updated_at"], "production preflight predates QA")
+            completed_at = datetime.fromisoformat(preflight["updated_at"])
+            require(
+                timedelta(0) <= datetime.now(UTC) - completed_at <= timedelta(hours=1),
+                "production preflight is not fresh",
+            )
+
+
+class Refused(Exception):
+    """An authorization or consistency check did not pass."""
+
+
+def require(condition, message):
+    if not condition:
+        raise Refused(message)
+
+
+def authorize(event, runtime, api):
+    require(runtime["repository"] == REPO, "wrong runtime repository")
+    require(
+        runtime["workflow_ref"] == f"{REPO}/{DISPATCHER}@refs/heads/main", "untrusted workflow ref"
+    )
+    require(event.get("action") == "created", "only new comments are accepted")
+    repository = event.get("repository", {})
+    require(
+        repository.get("full_name") == REPO and repository.get("default_branch") == "main",
+        "wrong repository",
+    )
+    issue, comment = event.get("issue", {}), event.get("comment", {})
+    number = issue.get("number")
+    require(
+        type(number) is int and number > 0 and number not in PROTECTED_PRS, "PR is not eligible"
+    )
+    require("pull_request" in issue, "not a PR conversation")
+    require(type(comment.get("id")) is int and comment["id"] > 0, "invalid comment")
+    operation, sha, workflow_name, inputs = command(comment.get("body", ""))
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(number == incident.PR_NUMBER, "incident PR binding required")
+    live_repo = api("GET", "")
+    require(repository.get("id") == live_repo["id"], "repository ID mismatch")
+    owner = live_repo["owner"]
+    actor, sender = comment.get("user", {}), event.get("sender", {})
+    require(
+        actor.get("id") == owner["id"] == sender.get("id"), "only repository owner may dispatch"
+    )
+    require(actor.get("login") == owner["login"] == sender.get("login"), "owner login mismatch")
+    require(
+        actor.get("type") == "User" and comment.get("author_association") == "OWNER",
+        "owner association required",
+    )
+    live_comment = api("GET", f"issues/comments/{comment['id']}")
+    require(
+        live_comment.get("body") == comment["body"]
+        and live_comment.get("user", {}).get("id") == owner["id"],
+        "comment changed or unavailable",
+    )
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            runtime.get("run_attempt") == "1"
+            and live_comment.get("id") == comment["id"]
+            and live_comment.get("issue_url")
+            == f"https://api.github.com/repos/{REPO}/issues/{incident.PR_NUMBER}"
+            and live_comment.get("user", {}).get("login") == owner["login"]
+            and live_comment.get("user", {}).get("type") == "User"
+            and live_comment.get("author_association") == "OWNER"
+            and isinstance(live_comment.get("created_at"), str)
+            and bool(live_comment["created_at"])
+            and live_comment.get("updated_at") == live_comment["created_at"],
+            "original unedited incident owner command required",
+        )
+    if operation == "rollback-check":
+        require(
+            runtime.get("run_attempt") == "1", "first rollback-check dispatcher attempt required"
+        )
+    if operation in {"rollback-r1-apply", "server-adopt-runner", "server-adopt-controller"}:
+        require(runtime.get("run_attempt") == "1", "first dispatcher attempt required")
+        r1.original_comment(live_comment, owner, number, comment["body"], require)
+        require(live_comment.get("id") == comment["id"], "live comment identity")
+    validate_pr(api("GET", f"pulls/{number}"), number, sha)
+    workflow = api("GET", f"actions/workflows/{workflow_name}")
+    require(
+        workflow.get("path") == f".github/workflows/{workflow_name}"
+        and workflow.get("state") == "active",
+        "guarded workflow unavailable",
+    )
+    if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            re.fullmatch(r"[0-9a-f]{40}", runtime.get("sha", "")),
+            "trusted recovery dispatcher SHA required",
+        )
+        require(
+            str(runtime["run_id"]) != str(incident.ORIGINAL_DISPATCHER),
+            "new incident dispatcher required",
+        )
+        incident.trusted_run(
+            api, require, runtime["run_id"], DISPATCHER, "issue_comment", owner, runtime["sha"]
+        )
+    release_gates(api, operation, sha, inputs)
+    if "recovery_comment_id" in inputs:
+        require(
+            live_comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}",
+            "recovery comment PR binding required",
+        )
+        original_id = inputs["request_comment_id"]
+        require(original_id != str(comment["id"]), "original comment required")
+        original = api("GET", f"issues/comments/{original_id}")
+        validate_prepare_comment(original, owner, number, sha)
+        inputs["recovery_comment_id"] = str(comment["id"])
+    if operation.startswith("server-"):
+        inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
+        inputs["pr_number"] = str(number)
+        inputs.setdefault("request_comment_id", str(comment["id"]))
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        inputs["incident_request_comment_id"] = str(comment["id"])
+        inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
+        if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
+            require(
+                comment["id"] != incident.ORIGINAL_REQUEST,
+                "new incident recovery approval required",
+            )
+            inputs["incident_request_comment_id"] = str(incident.ORIGINAL_REQUEST)
+            inputs["incident_recovery_comment_id"] = str(comment["id"])
+            if operation == "incident-r3-redeliver":
+                require(
+                    comment["id"] != incident.PARENT_REQUEST,
+                    "new incident redelivery approval required",
+                )
+                require(
+                    str(runtime["run_id"]) != str(incident.PARENT_DISPATCHER),
+                    "new incident dispatcher required",
+                )
+                inputs["incident_recovery_comment_id"] = str(incident.PARENT_REQUEST)
+                inputs["incident_redelivery_comment_id"] = str(comment["id"])
+    if operation == "rollback-r1-apply":
+        inputs["recovery_pr_number"] = str(number)
+        inputs["recovery_request_comment_id"] = str(comment["id"])
+        inputs["recovery_dispatcher_run_id"] = str(runtime["run_id"])
+    return number, operation, sha, workflow_name, inputs
+
+
+def validate_prepare_comment(comment, owner, number, sha):
+    require(
+        comment.get("body") == f"/pullup server-prepare {sha}"
+        and comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}"
+        and comment.get("user", {}).get("id") == owner["id"]
+        and comment.get("user", {}).get("login") == owner["login"]
+        and comment.get("user", {}).get("type") == "User"
+        and comment.get("author_association") == "OWNER",
+        "original prepare owner, text and PR binding required",
+    )
+
+
+def validate_pr(pr, number, sha):
+    require(
+        pr.get("number") == number and (pr.get("state") == "open" or pr.get("merged") is True),
+        "PR must be open or merged",
+    )
+    head, base = pr.get("head", {}), pr.get("base", {})
+    require(head.get("sha") == sha, "SHA must equal current PR head")
+    require(head.get("repo", {}).get("full_name") == REPO, "fork PR forbidden")
+    require(
+        base.get("repo", {}).get("full_name") == REPO and base.get("ref") == "main", "wrong PR base"
+    )
+    require(head.get("ref", "").startswith("codex/"), "codex branch required")
+
+
+def dispatch(event, runtime, api):
+    number, operation, sha, workflow_name, inputs = authorize(event, runtime, api)
+    recovery_id = inputs.pop("recovery_comment_id", None)
+    provenance = (
+        f"<!-- pullup-prepare-recovery-v1:{inputs['request_comment_id']}:{recovery_id}:{runtime['run_id']} -->\n"
+        if recovery_id
+        else ""
+    )
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        provenance = (
+            incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
+        )
+    if operation == "incident-r3-recover":
+        provenance = (
+            incident.recovery_marker(inputs["incident_recovery_comment_id"], runtime["run_id"])
+            + "\n"
+        )
+    if operation == "incident-r3-redeliver":
+        provenance = (
+            incident.redelivery_marker(inputs["incident_redelivery_comment_id"], runtime["run_id"])
+            + "\n"
+        )
+    if operation == "rollback-r1-apply":
+        provenance = (
+            r1.request_marker(inputs["recovery_request_comment_id"], runtime["run_id"]) + "\n"
+        )
+    marker_kind = "preflight" if operation == "staging-preflight" else operation
+    marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
+    if operation.startswith("server-"):
+        marker = (
+            f"<!-- pullup-{marker_kind}-v1:{number}:{sha}:ops-{inputs['request_comment_id']} -->"
+        )
+    if operation == "rollback-check":
+        # Read-only evidence may need refreshing after a different check or state change.
+        # A new owner comment is a new check; the same event keeps its durable claim.
+        marker = (
+            f"<!-- pullup-rollback-check-v2:{number}:{sha}:{inputs['kind']}:"
+            f"{inputs['manifest']}:{event['comment']['id']} -->"
+        )
+    if operation == "incident-r3-recover":
+        marker = incident.RECOVERY_MARKER
+    if operation == "incident-r3-redeliver":
+        marker = incident.REDELIVERY_MARKER
+    if operation == "rollback-r1-apply":
+        marker = r1.marker(inputs)
+    for page in range(1, 101):
+        listing = (
+            "issues/comments" if operation == "rollback-r1-apply" else f"issues/{number}/comments"
+        )
+        comments = api("GET", f"{listing}?per_page=100&page={page}")
+        require(isinstance(comments, list) and len(comments) <= 100, "invalid comment listing")
+        for comment in comments:
+            author = comment.get("user", {})
+            if (
+                author.get("id") == BOT_ID
+                and author.get("login") == "github-actions[bot]"
+                and marker in comment.get("body", "")
+            ):
+                require(
+                    not recovery_id or provenance.strip() in comment.get("body", ""),
+                    "original prepare already claimed; recovery forbidden",
+                )
+                return "duplicate: existing durable claim; not dispatched again"
+        if len(comments) < 100:
+            break
+    else:
+        raise Refused("comment pagination limit; refusing incomplete deduplication")
+    validate_pr(api("GET", f"pulls/{number}"), number, sha)
+    receipt = api(
+        "POST",
+        f"issues/{number}/comments",
+        {
+            "body": f"{marker}\n{provenance}{operation} reserved for `{sha}` by dispatcher run {runtime['run_id']}.\n"
+            "No automatic retry: if the next request is interrupted, inspect Actions before any operator recovery."
+        },
+    )
+    require(type(receipt.get("id")) is int and receipt["id"] > 0, "claim was not persisted")
+    require(receipt.get("user", {}).get("id") == BOT_ID, "claim must be authored by GitHub Actions")
+    # Recheck immediately before dispatch. No untrusted checkout or shell evaluation.
+    validate_pr(api("GET", f"pulls/{number}"), number, sha)
+    release_gates(api, operation, sha, inputs)
+    ref = api("GET", f"pulls/{number}")["head"]["ref"] if operation == "rehearse" else "main"
+    api(
+        "POST",
+        f"actions/workflows/{workflow_name}/dispatches",
+        {
+            "ref": ref,
+            "inputs": inputs,
+        },
+    )
+    api(
+        "PATCH",
+        f"issues/comments/{receipt['id']}",
+        {
+            "body": f"{marker}\n{provenance}Dispatch accepted for {operation} of `{sha}`.\n"
+            f"Dispatcher run: https://github.com/{REPO}/actions/runs/{runtime['run_id']}\n"
+            "Acceptance is not completion. Read the guarded workflow run and verify its exact SHA, inputs and successful conclusion."
+        },
+    )
+    return f"accepted: {operation} requested; completion must be independently verified"
+
+
+def main():
+    runtime = {
+        "repository": os.environ["GITHUB_REPOSITORY"],
+        "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+        "run_id": os.environ["GITHUB_RUN_ID"],
+        "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+        "sha": os.environ["GITHUB_SHA"],
+    }
+    with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
+        event = json.load(source)
+
+    trace = Trace()
+
+    def api(method, path, body=None):
+        trace.before(method, path)
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{REPO}" + (f"/{path}" if path else ""),
+            data=None if body is None else json.dumps(body).encode(),
+            method=method,
+            headers={
+                "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "pullup-guarded-comment-dispatch",
+            },
+        )
+        # Intentionally no retry of POST; a durable claim remains on uncertainty.
+        with urllib.request.urlopen(request, timeout=20) as response:
+            raw = response.read()
+            return json.loads(raw) if raw else None
+
+    try:
+        print(dispatch(event, runtime, api))
+    except (Refused, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(trace.report(exc, refused=isinstance(exc, Refused)))
+        raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    main()

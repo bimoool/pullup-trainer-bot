@@ -4,10 +4,29 @@
 # Используется и в CI (.github/workflows/e2e.yml), и локально — один источник правды.
 # not_onboarded (900001) не сеет ничего: статус = отсутствие строки users.
 set -euo pipefail
+# Stable inspection contract: expand the same registry without invoking any seed.
+LIST_ONLY=0
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 1 ] || [ "$1" != "--list" ]; then
+    printf 'Usage: %s [--list]\n' "$0" >&2
+    exit 2
+  fi
+  LIST_ONLY=1
+fi
 # e2e_seed.py импортирует пакет scripts.* — корень репозитория должен быть в sys.path.
 export PYTHONPATH="${PYTHONPATH:-.}"
 PY="${PYTHON:-python}"
-seed() { "$PY" scripts/e2e_seed.py "$1" "$2"; }
+seed() {
+  if [ "$LIST_ONLY" = "1" ]; then
+    printf '%s %s\n' "$1" "$2"
+    return
+  fi
+  if [ "${E2E_CALENDAR_FIXTURE:-}" = "1" ]; then
+    "$PY" -m tests.support.e2e_calendar_seed "$1" "$2"
+  else
+    "$PY" scripts/e2e_seed.py "$1" "$2"
+  fi
+}
 seed first_workout 900002
 seed ready 900003
 seed v2_session_ready 900010
@@ -24,9 +43,18 @@ seed plan_week_start_session 930503
 seed plan_week_start_session 930504
 seed plan_week_start_session 930505
 seed v5_one_rep_max 930502
+seed v5_weighted_b_live 930506
+seed v5_weighted_b_live 930507
 # ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
 # 930502 принадлежит course-v5-engine.spec.ts, который проходит тест 1RM и меняет его состояние.
 seed v5_one_rep_max 930701
+# вход в тренировку с Главной (home-start-training.spec.ts): СВОЙ профиль — спек стартует сессию.
+seed plan_week_start_session 930801
+# Home partial upstream failures (#353/#298): read-only course and empty-plan fixtures.
+seed plan_week_start_session 939981
+seed plan_week_start_session 939982
+seed home_workouts 939971
+seed home_workouts 939972
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001
@@ -34,9 +62,13 @@ seed plan_week_stepper 990002
 seed builder_workouts 910001
 # issue #306: Live Engine v2 (автопереходы, пауза, интервал) — по пользователю на сценарий.
 for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612 930613 930614 930615 930616 930617 930618 930619 930620 930621 930622 930623 930624 930625 930626 930627 930628 930629; do seed live_engine "$id"; done
+# Delayed refresh / acknowledged pause ordering has an independent mutable identity.
+seed live_engine 930630
+seed live_engine 930631
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
+seed journal_calendar_response_race 939951
 seed journal_edit 997201
 seed journal_edit 997202
 seed analytics_v2 910003
@@ -60,6 +92,9 @@ seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
 seed home_workouts 920004
+# Builder rest/reps: one home_workouts profile per case and CI retry.
+# Foreign-owner companions 1920005–1920012 are reserved by the same seed.
+for id in 920005 920006 920007 920008 920009 920010 920011 920012; do seed home_workouts "$id"; done
 seed home_discovery 940001
 seed home_discovery 940002
 seed workout_detail 950001
@@ -226,3 +261,11 @@ seed plan_week_add_exercise 931003
 seed plan_week_add_exercise 931006
 seed live_engine 931004
 seed journal_catalog_session 931005
+
+# Workout save/navigation race: independent golden_journey user plus retry.
+for id in 939901 939902; do seed golden_journey "$id"; done
+
+# Journal clone visibility: independent users per navigation case and retry.
+for id in 939921 939922 939931 939932; do seed golden_journey "$id"; done
+# Journal edit/clone Back during pending API response; one user per case/retry.
+for id in 939961 939962 939963 939964 939965 939966 939967 939968; do seed journal_edit "$id"; done

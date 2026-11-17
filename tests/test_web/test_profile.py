@@ -168,10 +168,11 @@ async def test_update_profile_updates_only_provided_fields(session):
     должен стереть значения, заданные первым."""
     user = await UserRepository(session).create(telegram_id=51007, username="editor")
     await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    await UserRepository(session).update_profile(user.id, height_cm=175)
 
     first = await _put_profile(
         session, user.telegram_id,
-        {"weight_kg": "70", "height_cm": 175, "gender": "female", "birth_date": "1998-05-01"},
+        {"weight_kg": "70", "gender": "female", "birth_date": "1998-05-01"},
     )
     assert first.status_code == 200
     body = first.json()
@@ -181,10 +182,11 @@ async def test_update_profile_updates_only_provided_fields(session):
     assert body["gender_label"] == "женский"
     assert body["birth_date"] == "1998-05-01"
 
-    second = await _put_profile(session, user.telegram_id, {"height_cm": 176})
+    second = await _put_profile(session, user.telegram_id, {"timezone": "Asia/Yekaterinburg"})
     assert second.status_code == 200
     body2 = second.json()
-    assert body2["height_cm"] == 176
+    assert body2["height_cm"] == 175
+    assert body2["timezone"] == "Asia/Yekaterinburg"
     # Остальные поля из первого PUT не должны были стереться.
     assert body2["weight_kg"] == "70"
     assert body2["gender"] == "female"

@@ -48,10 +48,12 @@ webhook — отдельный этап, когда появится VPS с до
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev,web]"  # web — только для app/web/ (Mini App, tests/test_web/)
+bash scripts/install-python.sh dev  # runtime / web / dev — полные наборы с хешами
 cp .env.example .env  # укажите DATABASE_URL на локальный Postgres
 python -m app.main
 ```
+
+Подробности фиксации версий и настройки облачной среды — [Python dependencies](docs/PYTHON_DEPENDENCIES.md).
 
 ## Тесты
 

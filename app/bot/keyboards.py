@@ -9,6 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
+from app.bot.timezones import TIMEZONE_DISPLAY_LABELS
 from app.config import settings
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
@@ -90,10 +91,12 @@ def baseline_confirm_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def gender_keyboard(back_callback: str | None = None) -> InlineKeyboardMarkup:
+def gender_keyboard(back_callback: str | None = None, *, skip_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.GENDER_LABEL_MALE, callback_data="gender:male")
     builder.button(text=texts.GENDER_LABEL_FEMALE, callback_data="gender:female")
+    if skip_callback is not None:
+        builder.button(text="Не указывать", callback_data=skip_callback)
     if back_callback is not None:
         builder.button(text="← Назад", callback_data=back_callback)
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
@@ -619,7 +622,6 @@ def training_reminder_keyboard(*, enabled: bool, hour: int) -> InlineKeyboardMar
 def profile_edit_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.PROFILE_EDIT_BUTTON_WEIGHT, callback_data="profile_edit:weight")
-    builder.button(text=texts.PROFILE_EDIT_BUTTON_HEIGHT, callback_data="profile_edit:height")
     builder.button(text=texts.PROFILE_EDIT_BUTTON_GENDER, callback_data="profile_edit:gender")
     builder.button(text=texts.PROFILE_EDIT_BUTTON_BIRTH_DATE, callback_data="profile_edit:birth_date")
     builder.button(text=texts.PROFILE_EDIT_BUTTON_TIMEZONE, callback_data="profile_edit:timezone")
@@ -649,4 +651,24 @@ def end_cycle_confirm_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="✅ Подтвердить", callback_data="end_cycle_confirm")
     builder.button(text="❌ Отмена", callback_data="end_cycle_cancel")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def timezone_choice_keyboard(prefix: str, *, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for timezone, label in TIMEZONE_DISPLAY_LABELS.items():
+        builder.button(text=label, callback_data=f"{prefix}:{timezone}")
+    if back_callback is not None:
+        builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def questionnaire_birth_date_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Не указывать", callback_data="qnr_skip:birth_date")
+    builder.button(text="← Назад", callback_data="qnr_back:gender")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
     return builder.as_markup()

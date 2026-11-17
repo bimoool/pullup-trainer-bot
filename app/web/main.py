@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.web.private_errors import PrivateErrorMiddleware
 from app.web.routes import router
 from app.web.routes_v2 import router_v2
 from app.web.routes_v2_analytics import router_v2_analytics
@@ -21,6 +22,7 @@ from app.web.routes_v2_plan import router_v2_plan
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "webapp-frontend" / "dist"
 
 app = FastAPI(title="pullup-trainer-bot mini app")
+app.add_middleware(PrivateErrorMiddleware)
 app.include_router(router)
 # Новая многокурсовая схема (issue #165, волна 3) — отдельный префикс
 # /api/v2, параллельно старым /api/* маршрутам, НЕ подключена к

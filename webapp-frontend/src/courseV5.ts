@@ -5,6 +5,26 @@
  * отдых/стоп-правила рецепта; этот модуль их не изображает.
  */
 
+import { formatWeight, type WeightUnit } from "./units.ts";
+
+/** Load comes only from the frozen prescription, never from current profile or a guessed default. */
+export function courseBlockLoadText(block: Record<string, unknown> | null | undefined, unit: WeightUnit = "kg"): string | null {
+  if (!block) return null;
+  const raw = block.external_load_kg;
+  if ((typeof raw === "string" && raw.trim() !== "") || typeof raw === "number") {
+    const load = Number(raw);
+    if (Number.isFinite(load) && load >= 0) return load === 0 ? "Свой вес" : `+${formatWeight(load, unit)}`;
+  }
+  const assistance = block.assistance as Record<string, unknown> | null | undefined;
+  if (assistance?.kind === "bodyweight") return "Свой вес";
+  if (assistance?.kind === "band") {
+    const details = [assistance.name, assistance.colour, assistance.attachment, assistance.body_position]
+      .filter((value): value is string => typeof value === "string" && value.trim() !== "");
+    return details.length ? `Резина: ${details.join(" · ")}` : "Резина";
+  }
+  return null;
+}
+
 export type CourseSetMarker = "working" | "amrap" | "control" | "dynamic";
 
 export interface CourseSetTarget {

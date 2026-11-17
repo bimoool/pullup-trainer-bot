@@ -1,5 +1,5 @@
 import { Spinner } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   addWorkoutItem,
@@ -70,6 +70,8 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [itemActionError, setItemActionError] = useState<string | null>(null);
+  const [itemSaving, setItemSaving] = useState(false);
+  const itemSaveInFlight = useRef(false);
   const [itemView, setItemView] = useState<ItemBuilderView>(startWithPicker && isEditing ? { kind: "picker" } : { kind: "editor" });
   const [workoutDeleteConfirm, setWorkoutDeleteConfirm] = useState(false);
   const [workoutBusy, setWorkoutBusy] = useState(false);
@@ -106,6 +108,7 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
   // itemView, а не просто вызываем onBack всегда.
   useBackButton(
     () => {
+      if (itemSaveInFlight.current) return;
       if (itemView.kind !== "editor") {
         setItemView({ kind: "editor" });
       } else {
@@ -165,30 +168,40 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
   }
 
   async function handleAddItem(exercise: ExerciseResponseV2, protocol: ProtocolFormValue) {
-    if (workoutId === null) {
+    if (workoutId === null || itemSaveInFlight.current) {
       return;
     }
     setItemActionError(null);
+    itemSaveInFlight.current = true;
+    setItemSaving(true);
     try {
       const created = await addWorkoutItem(initDataRaw, workoutId, exercise.id, protocol);
       setItems((current) => [...current, created]);
       setItemView({ kind: "editor" });
     } catch (error) {
       setItemActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      itemSaveInFlight.current = false;
+      setItemSaving(false);
     }
   }
 
   async function handleUpdateItem(item: WorkoutItemResponseV2, protocol: ProtocolFormValue) {
-    if (workoutId === null) {
+    if (workoutId === null || itemSaveInFlight.current) {
       return;
     }
     setItemActionError(null);
+    itemSaveInFlight.current = true;
+    setItemSaving(true);
     try {
       const updated = await updateWorkoutItem(initDataRaw, workoutId, item.id, { protocol });
       setItems((current) => current.map((existing) => (existing.id === updated.id ? updated : existing)));
       setItemView({ kind: "editor" });
     } catch (error) {
       setItemActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      itemSaveInFlight.current = false;
+      setItemSaving(false);
     }
   }
 
@@ -242,6 +255,8 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
         initialExerciseName={itemView.exercise.name}
         initialProtocol={null}
         submitLabel="Добавить"
+        pending={itemSaving}
+        saveError={itemActionError}
         onCancel={() => setItemView({ kind: "editor" })}
         onSubmit={(protocol) => void handleAddItem(itemView.exercise, protocol)}
       />
@@ -254,6 +269,8 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
         initialExerciseName={itemView.item.exercise_name}
         initialProtocol={itemView.item.protocol}
         submitLabel="Сохранить"
+        pending={itemSaving}
+        saveError={itemActionError}
         onCancel={() => setItemView({ kind: "editor" })}
         onSubmit={(protocol) => void handleUpdateItem(itemView.item, protocol)}
       />
@@ -296,7 +313,7 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
                     type="button"
                     className="ux-item-main"
                     aria-label={`Изменить: ${item.exercise_name}`}
-                    onClick={() => setItemView({ kind: "edit-item-protocol", item })}
+                    onClick={() => { setItemActionError(null); setItemView({ kind: "edit-item-protocol", item }); }}
                   >
                     <span className="ux-item-name">{item.exercise_name}</span>
                     <span className="ux-item-kind">{summary.kindTitle}</span>
@@ -321,7 +338,7 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
             })}
           </div>
           {itemActionError && <p className="gap-banner">{itemActionError}</p>}
-          <button type="button" className="ux-add-button" onClick={() => setItemView({ kind: "picker" })}>
+          <button type="button" className="ux-add-button" onClick={() => { setItemActionError(null); setItemView({ kind: "picker" }); }}>
             + Добавить упражнение
           </button>
         </>
@@ -332,7 +349,8 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
       {isEditing && workoutId !== null && (
         <div className="ux-secondary-row">
           <button
-            type="button" className="ux-secondary" disabled={items.length === 0}
+            // A late save callback navigates away: do not open a sheet that it would immediately unmount.
+            type="button" className="ux-secondary" disabled={saving || workoutBusy || items.length === 0}
             title={items.length === 0 ? "Сначала добавьте хотя бы одно упражнение" : undefined}
             onClick={() => onAddToPlan(workoutId, title)}
           >

@@ -12,6 +12,7 @@ from app.db.base import async_session_factory
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.diagnostics import safe_exception_trace
 from app.domain.reports import weekly_summary
 
 logger = logging.getLogger(__name__)
@@ -52,8 +53,8 @@ async def send_weekly_reports(bot: Bot) -> None:
             try:
                 await bot.send_message(user.telegram_id, text)
                 sent += 1
-            except TelegramAPIError:
-                logger.warning("weekly_report: failed to notify user %s", user.telegram_id, exc_info=True)
+            except TelegramAPIError as exception:
+                logger.warning("weekly_report: failed to notify user %s; %s", user.telegram_id, safe_exception_trace(exception))
 
     if sent:
         logger.info("weekly_report: sent %s report(s)", sent)

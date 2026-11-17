@@ -12,6 +12,8 @@ import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
+import { localToday } from "./planWeekNav";
+import { formatAvailableFrom, pickHomeTraining, type HomeTraining } from "./homeTraining";
 import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
@@ -29,6 +31,8 @@ type Props = {
   /** После «Добавить в план» из карточки Workout — переход на вкладку «Планы»
    * (тот же результат, что у добавления из «Планов»). */
   onOpenPlans: () => void;
+  /** «Начать тренировку» на Главной — тот же поток, что «Начать» на «Планах» (PlanSessionFlow). */
+  onStartSession: (planItemIds: number[], options: { manual: boolean; title: string }) => void;
   /** «+» → «Записать в журнал»: открыть Журнал со шторкой записи (#263). */
   onOpenJournalLog: () => void;
   /** «Начать» на Workout Detail — живая сессия своей тренировки вне плана. */
@@ -62,9 +66,37 @@ type WorkoutView =
 type CatalogState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean };
+  | { phase: "ready"; programs: ProgramResponseV2[] };
+
+type PlanState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; includedProgramIds: Set<number>; hasPlanItems: boolean; training: HomeTraining };
 
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
+
+/** Прямой вход в тренировку с Главной: «Начать» ведёт в тот же поток, что и на «Планах». */
+function HomeTrainingCard({ training, onStart, onOpenPlans }: {
+  training: HomeTraining; onStart: (planItemIds: number[], title: string) => void; onOpenPlans: () => void;
+}) {
+  if (training.kind === "start") {
+    return (
+      <div className="home-group" data-testid="home-training">
+        <Button className="action-button vs-primary" size="l" stretched data-testid="home-training-start"
+          onClick={() => onStart(training.planItemIds, training.title)}>
+          Начать тренировку
+        </Button>
+      </div>
+    );
+  }
+  const from = training.kind === "wait" ? formatAvailableFrom(training.availableFrom) : null;
+  return (
+    <div className="home-group" data-testid="home-training-wait">
+      <p className="screen-message">Сегодня отдых между тренировками{from !== null ? ` — следующая с ${from}` : ""}.</p>
+      <Button className="action-button" size="l" stretched mode="plain" onClick={onOpenPlans}>Открыть план</Button>
+    </div>
+  );
+}
 
 /** «+»-шторка Главной: модальный диалог (#290) — фокус внутрь, Tab-ловушка, Escape/BackButton, возврат фокуса. */
 function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
@@ -94,10 +126,12 @@ function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
  * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
 export function HomeScreen({
-  initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout,
+  initDataRaw, onOpenPlans, onStartSession, onOpenJournalLog, onStartWorkout, onLogWorkout,
   initialWorkoutId = null, onInitialWorkoutShown, initialWorkoutFromJournal = true, onExitInitialWorkout,
 }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
+  const [plan, setPlan] = useState<PlanState>({ phase: "loading" });
+  const [planReloadKey, setPlanReloadKey] = useState(0);
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
   // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
   // showAchievements в ProfileScreen: id, не boolean, чтобы Detail-экран мог
@@ -213,7 +247,7 @@ export function HomeScreen({
 
   // Promo-баннеры (#280): сборка — после «Подборок», запись — после «Мои тренировки», план дня — после «Избранного».
   // Нет ни курса, ни пункта плана: «план дня» вёл бы на пустой экран «Планы» (#298) — ведём к действию.
-  const noPlan = catalog.phase === "ready" && catalog.includedProgramIds.size === 0 && !catalog.hasPlanItems;
+  const noPlan = plan.phase === "ready" && plan.includedProgramIds.size === 0 && !plan.hasPlanItems;
   const hasCourses = catalog.phase === "ready" && catalog.programs.length > 0;
 
   function runPromo(kind: PromoKind) {
@@ -239,15 +273,12 @@ export function HomeScreen({
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchPrograms(initDataRaw), fetchPlan(initDataRaw)])
-      .then(([programs, plan]) => {
-        if (cancelled) {
-          return;
+    setCatalog({ phase: "loading" });
+    fetchPrograms(initDataRaw)
+      .then((programs) => {
+        if (!cancelled) {
+          setCatalog({ phase: "ready", programs });
         }
-        const includedProgramIds = new Set(
-          (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
-        );
-        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0 });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -259,18 +290,42 @@ export function HomeScreen({
     };
   }, [initDataRaw]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setPlan({ phase: "loading" });
+    fetchPlan(initDataRaw)
+      .then((data) => {
+        if (!cancelled) {
+          setPlan({
+            phase: "ready",
+            includedProgramIds: new Set((data?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id)),
+            hasPlanItems: (data?.plan_items ?? []).length > 0,
+            training: pickHomeTraining(data, localToday()),
+          });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPlan({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw, planReloadKey]);
+
   async function handleAddToPlan(programId: number) {
     // Guard against duplicate in-flight requests (issue #211, HA-3: double-tap
     // protection). Error state intentionally NOT blocked — single intentional
     // click after error clears it and retries (тот же UX-паттерн, что
     // startingGroupKey в DashboardScreen.tsx::renderGroupRow).
-    if (addState.phase === "adding") {
+    if (plan.phase !== "ready" || plan.includedProgramIds.has(programId) || addState.phase === "adding") {
       return;
     }
     setAddState({ phase: "adding", programId });
     try {
       await createProgramInclusion(initDataRaw, programId);
-      setCatalog((prev) =>
+      setPlan((prev) =>
         prev.phase === "ready"
           ? { ...prev, includedProgramIds: new Set(prev.includedProgramIds).add(programId) }
           : prev,
@@ -362,13 +417,15 @@ export function HomeScreen({
   if (selectedProgramId !== null && catalog.phase === "ready") {
     const program = catalog.programs.find((p) => p.id === selectedProgramId);
     if (program) {
-      const included = catalog.includedProgramIds.has(program.id);
+      const included = plan.phase === "ready" ? plan.includedProgramIds.has(program.id) : null;
       const adding = addState.phase === "adding" && addState.programId === program.id;
       return (
         <ProgramDetailScreen
           initDataRaw={initDataRaw}
           program={program}
           included={included}
+          planError={plan.phase === "error" ? plan.message : null}
+          onReloadPlan={() => setPlanReloadKey((key) => key + 1)}
           adding={adding}
           addError={addState.phase === "error" ? addState.message : null}
           onAdd={() => void handleAddToPlan(program.id)}
@@ -444,6 +501,20 @@ export function HomeScreen({
       {/* Заголовок экрана остаётся для скринридеров/тестов, визуально его заменяет строка поиска (как в эталоне). */}
       <h1 className="plan-title home-title-sr">Главная</h1>
 
+      {plan.phase === "loading" && <p className="screen-message">Загружаю план…</p>}
+      {plan.phase === "error" && (
+        <div className="home-group" data-testid="home-plan-unavailable">
+          <p className="screen-message">Не удалось загрузить план: {plan.message}. Тренировка на сегодня и состояние курсов в плане пока недоступны.</p>
+          <Button size="s" mode="outline" onClick={() => setPlanReloadKey((key) => key + 1)}>Повторить загрузку плана</Button>
+        </div>
+      )}
+      {plan.phase === "ready" && plan.training.kind !== "none" && (
+        <HomeTrainingCard
+          training={plan.training}
+          onStart={(ids, title) => onStartSession(ids, { manual: false, title })}
+          onOpenPlans={onOpenPlans}
+        />
+      )}
       {/* Порядок секций как в эталоне: категории → подборки → баннер → мои тренировки → баннер →
           избранное (скрыто, пока пусто) → баннер → тесты. Баннеры: сборка / запись / план дня. */}
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
@@ -473,7 +544,7 @@ export function HomeScreen({
           </div>
           <div className="home-program-row" data-testid="program-row">
             {row.programs.map((program) => {
-              const included = catalog.includedProgramIds.has(program.id);
+              const included = plan.phase === "ready" && plan.includedProgramIds.has(program.id);
               return (
                 <div key={program.id} className="home-program-card">
                   <button
@@ -626,14 +697,14 @@ export function HomeScreen({
         );
       })()}
 
-      <HomePromo
+      {plan.phase === "ready" && <HomePromo
         kind="plan" onClick={() => runPromo("plan")}
         override={noPlan ? {
           title: "План дня пока пуст",
           meta: hasCourses ? "Выберите курс в каталоге выше" : "Соберите свою тренировку",
           label: "Баннер: план дня пуст",
         } : undefined}
-      />
+      />}
 
       <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
         <span className="home-tests-row-badge" aria-hidden="true">

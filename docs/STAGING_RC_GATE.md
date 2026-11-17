@@ -21,7 +21,7 @@ psql -h 127.0.0.1 -p 54329 -U pullup -d postgres -c "create database pullup_e2e;
 ## Окружение
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev,web]"      # проект — Python 3.12
+python -m venv .venv && PYTHON=.venv/bin/python bash scripts/install-python.sh dev      # проект — Python 3.12
 (cd webapp-frontend && npm ci) && (cd webapp-frontend/e2e && npm ci)
 ```
 

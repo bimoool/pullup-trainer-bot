@@ -1,0 +1,142 @@
+name: Isolated browser smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolated-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pullup
+          POSTGRES_PASSWORD: pullup
+          POSTGRES_DB: pullup_smoke_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pullup -d pullup_smoke_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_smoke_test
+      TEST_DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_smoke_test
+    steps:
+      - name: Refuse untrusted manual or scheduled refs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            test "$SOURCE_REF" = refs/heads/main
+            test "$DEFAULT_BRANCH" = main
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable signing token and target guard
+        run: |
+          python - <<'PY'
+          import os, secrets
+          token = '123456:' + secrets.token_urlsafe(32)
+          print('::add-mask::' + token)
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('BOT_TOKEN=' + token + '\n')
+          PY
+      - name: Guard before migrations and seed
+        run: python scripts/isolated_smoke_guard.py
+      - name: Install backend
+        run: bash scripts/install-python.sh dev
+      - name: Migrate isolated database
+        run: alembic upgrade head
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build real frontend
+        working-directory: webapp-frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Seed one synthetic account
+        run: |
+          python scripts/isolated_smoke_guard.py
+          python -m scripts.e2e_seed sweep_populated 996911 > "$RUNNER_TEMP/smoke-seed.log" 2>&1
+      - name: Start isolated API
+        run: |
+          python scripts/isolated_smoke_guard.py
+          uvicorn app.web.main:app --host 127.0.0.1 --port 8001 > "$RUNNER_TEMP/smoke-api.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8001/health > /dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          echo SMOKE_API_NOT_HEALTHY
+          exit 1
+      - name: Install browser
+        working-directory: webapp-frontend/e2e-staging
+        run: |
+          npm ci
+          npm run typecheck
+          npx playwright install --with-deps chromium
+      - name: Real provider and signed browser smoke
+        working-directory: webapp-frontend/e2e-staging
+        run: |
+          if npx playwright test --config playwright.smoke.config.ts > "$RUNNER_TEMP/smoke-browser.log" 2>&1; then
+            echo ISOLATED_SMOKE_PASSED
+          else
+            echo ISOLATED_SMOKE_FAILED
+            exit 1
+          fi
+      - name: Record source context and outcome
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path('webapp-frontend/e2e-staging/smoke-results')
+          root.mkdir(parents=True, exist_ok=True)
+          result = {
+              'schema': 1, 'status': os.environ['JOB_STATUS'],
+              'event': os.environ['GITHUB_EVENT_NAME'],
+              'checkout_sha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'github_sha': os.environ['SOURCE_SHA'],
+              'workflow_sha': os.environ['SOURCE_WORKFLOW_SHA'],
+              'pr_head_sha': os.environ['SOURCE_HEAD_SHA'] or None,
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+          }
+          (root / 'context.json').write_text(json.dumps(result))
+          PY
+      - name: Upload only fixed status and synthetic UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolated-smoke-safe-result
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            webapp-frontend/e2e-staging/smoke-results/status.json
+            webapp-frontend/e2e-staging/smoke-results/context.json
+            webapp-frontend/e2e-staging/smoke-results/home.png
+            webapp-frontend/e2e-staging/smoke-results/plans.png
+            webapp-frontend/e2e-staging/smoke-results/journal.png
+            webapp-frontend/e2e-staging/smoke-results/analytics.png
+            webapp-frontend/e2e-staging/smoke-results/profile.png

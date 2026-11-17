@@ -34,6 +34,7 @@ from app.domain.plan_occurrence import (
     is_too_early,
     spacing_days_by_group,
 )
+from app.domain.rules import ReadinessCheck, check_training_readiness
 from app.services.training_analytics import resolve_timezone
 
 
@@ -63,6 +64,16 @@ class SpacingStatus:
         if self.available_from is None:
             return None
         return datetime.combine(self.available_from, time(0), tzinfo=resolve_timezone(user_timezone)).astimezone(UTC)
+
+
+def gap_readiness(spacing: SpacingStatus) -> ReadinessCheck | None:
+    """Перерыв/замер (GAP_ROLLBACK_DAYS / GAP_RETEST_DAYS) от ТОГО ЖЕ «последнего старта MAIN», что и отдых K1:
+    максимум из legacy `workouts` и нативных v2-сессий, даты в поясе пользователя. Раньше перерыв считался только
+    по legacy-таблице и «повторный замер» показывался человеку, тренировавшемуся в Mini App вчера (issue: неделя
+    19–25 октября). None — основных тренировок вообще нет."""
+    if spacing.last_start_date is None:
+        return None
+    return check_training_readiness(spacing.last_start_date, spacing.today)
 
 
 class MainSpacingService:

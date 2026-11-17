@@ -219,10 +219,18 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 Порядок: проверка дампа (sha256 = manifest, оглавление, свободный диск ≥ 3 × дамп + 1 ГБ) → `stop app web`, 0 соединений
 → восстановление в **новую** БД `pullup_rb_<ts>` (`--single-transaction --exit-on-error`), в ней `alembic_version` =
 `previous_alembic` и счётчики `users/workouts/elective_workouts/subscriptions` = manifest → **одной транзакцией**
-`ALTER DATABASE pullup RENAME TO pullup_failed_<ts>; ALTER DATABASE pullup_rb_<ts> RENAME TO pullup` (атомарность
-переименования проверена на `postgres:16`) → прежние образы и checkout → `up -d` → `/health` → проверка ID.
+`BEGIN; ALTER DATABASE pullup RENAME TO pullup_failed_<ts>; ALTER DATABASE pullup_rb_<ts> RENAME TO pullup; COMMIT;`
+(реальные PostgreSQL 16 регрессии проверяют отказ каждого rename и прерывание backend между ними)
+→ прежние образы и checkout → `up -d` → `/health` → проверка ID.
 Живая БД не удаляется: она остаётся как `pullup_failed_<ts>`. Удалить её владелец может сам, когда данные окна
 разобраны.
+
+При потере соединения около `COMMIT` ответ мог потеряться уже после фиксации обоих rename.
+Сервисы остаются остановлены: проверить все три имени БД из ошибки и manifest, не повторять apply вслепую.
+Версия до исправления #411 отправляла SQL в stdin `psql` без `BEGIN`: два rename были отдельными
+транзакциями и отказ второго мог оставить имя `pullup` отсутствующим. Репозиторный фикс сам по себе
+не обновляет установленный rollback-скрипт; принятие возможно только через отдельно проверенный
+controller bundle после release gates, без перезаписи установленного файла вручную.
 
 ### 7.4 Окно потери данных R3
 
@@ -276,8 +284,9 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
   на репетиции. Если повторный apply законно трогает какие-то поля (например, временные метки), скрипт откажет; это
   надо увидеть на репетиции, а не в окне.
 * Совместимость старого кода с новой схемой (R2), поведение FSM в Redis после смены хендлеров, кэш старого бандла Mini App.
-* `pg_restore --single-transaction` R3 на прод-дампе и атомарная перестановка БД — проверены только на пустой
-  `postgres:16` локально; на прод-дампе — на репетиции §4 п. 7.
+* `pg_restore --single-transaction` R3 на прод-дампе — на репетиции §4 п. 7. Пара rename с явным
+  `BEGIN`/`COMMIT` проверена на отдельных синтетических БД PostgreSQL 16 с историей и архивом:
+  успех, отказ первого/второго rename, прерывание backend между ними. Это не проверка всего production R3.
 * Выкатываемый SHA должен содержать `628144f`; `aa9270e` его не содержит (§1).
 
 ## 10. Выкат из GitHub Actions (постоянный ручной путь)
@@ -312,3 +321,159 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 * **Порядок:** preflight → прочитать вывод → apply с токеном. Обрыв соединения во время apply — fail-safe скрипта
   (§6): `app`/`web` остаются остановленными, в логе Actions — точная команда отката, её параметры вводятся в
   `production-rollback.yml`.
+
+## Same-schema hotfix: read-only runtime compatibility
+
+When the current and target Alembic revisions match, the guarded runner uses
+`scripts/backfill_multi_program.py --verify-compatible` before stopping app/web,
+then under stopped writers and again for the final invariants. This mode is
+separate from `--verify-only`, which retains strict initial-migration semantics.
+An initial migration from an older revision retains the full backfill path and
+its original strict final invariants.
+
+Compatibility accepts the existing runtime contract: onboarding may leave no
+TrainingPlan; an existing plan may have zero or multiple active courses, manual
+items, custom plans, removed courses, or an owner who has not completed the
+questionnaire. It validates relational ownership of plan/week/inclusion/custom
+plan/session references, not course-count equality, STEP JSON shapes, cached
+progress counters, slot completeness, or unique historical credit per plan item.
+
+A missing plan is compatible with cold archives, including archived completed-workout
+counters. Completed native unplanned journal/activity facts are compatible only
+with explicit supported provenance and no plan/credit or protected STEP-role signals.
+Saved-workout manual records/repeats also require same-user/system definition
+ownership and consistent frozen definition/version/snapshot identity. Direct live
+v1/v2 records require their explicitly supported completed terminal engine shape;
+active, cancelled and unknown engine state remains refused. Archived definitions
+retain historical identity. A completed reset legacy copy additionally requires a key,
+`legacy_deleted`, a same-user archive id/date/status match, no live legacy source,
+and no plan/inclusion/M2M links. Archive presence and onboarding status alone never
+permit an account: current workouts (any status), electives, positive current counters,
+active or unclassified sessions and unproved references still refuse release.
+Profile, baseline, trial and a zero completed-workout set alone do not require a plan.
+All-user historical reconciliation,
+keyed copy coverage, duplicate detection, proposed history mutations, unresolved
+ambiguity and required catalog checks remain blockers.
+
+Both modes use a fresh PostgreSQL `REPEATABLE READ, READ ONLY` transaction and
+roll it back. Compatibility emits a distinct `verify-compatible` machine result
+with nonnegative integer classification counts. The runner validates count
+equations, zero blocked/history-mutation/ambiguity counts and stable
+classification before/after stopping writers. Backfill dry-run must agree with
+that classification: it may propose plans for the explicitly compatible planless
+onboarded users; these proposals are never applied. No mutating backfill or
+`backfill_started_at` marker is permitted on the same-schema path.
+
+Full-table fingerprints, pre-existing-table hashes, backup/restore checks,
+schema checks, history dry-run and plan-repair dry-run guards remain mandatory.
+Phase 9 uses compatibility results for same-schema releases instead of requiring
+one active course and one plan per onboarded user. Every stopped-state refusal
+leaves writers stopped for the existing guarded recovery decision.
+
+A successful fingerprint comparison only proves this run preserved its input.
+It does not certify an incident-modified database as a new baseline: reconcile
+that state against the original stopped-writer snapshot, or recover from the
+original verified backup while preserving the failed database, before forwarding. No history or plan repair is authorized by
+compatibility verification.
+
+Preflight's fixed `PLANLESS-SOURCES` diagnostic reports only overlapping anonymous
+user counts for current planless accounts, the eight history sources and limited
+native/started/linked/unknown-origin/superseded/STEP flags. The query uses a bounded
+read-only snapshot; failures export only `DIAG_UNAVAILABLE`. Origin classification
+is not a complete safety classification, and neither this metadata nor the separate
+historical-failure diagnostic is admission. Same-schema preflight additionally
+requires `PLANLESS-CANDIDATE` from the CLI's exact canonical classification SQL:
+the reviewed guard checks the fixed candidate Git blob's regular mode, bounded
+size and compiled SHA256 before executing it in an explicit bounded read-only
+repeatable-read transaction. It exports only fixed numeric reason/subtype counts.
+`PLANLESS_BLOCKED` must be zero; blocked, missing, mismatched or unavailable results
+refuse before build or STOP. Zero proves this necessary condition only: the full
+phase-2 verifier and all stopped-writer/global preservation checks remain mandatory.
+The initial migration path keeps its existing preflight where these tables may
+not exist. Run the final candidate's once-only production-preflight after its
+exact-SHA staging and both QA results, following reviewed guard adoption and fresh
+readiness; no retry or protocol exception is introduced.
+
+Before using it on production:
+
+1. Require the reviewed runtime-compatibility guard and the workout rest fix in
+   the same candidate SHA, with PostgreSQL tests and existing CI green on that
+   exact combined SHA. Source files at bd80bc9 and d1b2375 were independently
+   confirmed identical for the production runner/backfill; recheck newer bases.
+2. A full restored-production-copy rehearsal is a diagnostic option; it is not
+   an additional release gate when the owner explicitly waives it for this
+   release. If performed, isolate the copy, disable outbound Telegram and save
+   verifier JSON, fingerprints, rollback and plan dry-run reports. The waiver
+   does not waive exact-SHA CI, synthetic PostgreSQL/guard regression checks or
+   reconciliation of the failed state against the original stopped-writer
+   snapshot (or verified original-backup recovery preserving the failed
+   database). Synthetic tests do not certify that incident state.
+3. Review/install the production runner from the exact tested commit at the path
+   used by the forced-command dispatcher. Record its sha256. Do not substitute
+   a candidate without `--verify-compatible` support; it will safely refuse before stop.
+4. Run read-only preflight, then only the previously authorized guarded operation
+   with the exact candidate SHA. Existing rollback/runbook restrictions remain.
+
+The candidate has no schema changes. This mode fixes deployment preservation;
+it does not patch active session `engine_plan` or historical prescriptions. Keep
+active-session recovery separate, preserving plan/snapshot/event replay consistency.
+
+## Репетиция REST01 одним скриптом (`deploy/rehearse-rest01-release.sh`)
+
+Заменяет ручной §4 для релиза #342: клонирует публичный репозиторий в `/srv/rehearsal-*` (не из production-каталога),
+поднимает отдельный compose-проект с фейковым `BOT_TOKEN` и заблокированным `api.telegram.org`, восстанавливает КОПИЮ
+дампа (читается только файл), прогоняет контрольно прежний раннер (должен воспроизвести отказ фазы 8 и дать построчный
+diff `plan_weeks/plan_items/program_inclusions`), затем новый раннер в `rehearse-check`, сверяет отпечатки всех таблиц
+до/после, запускает независимый `--verify-compatible` и считает незавершённые legacy-занятия с неверным отдыхом (только по
+копии, занятия не меняются). По умолчанию удаляет копию данных, оставляет отчёты в `/srv/rehearsal-*/reports/`.
+Скрипт отказывается стартовать, если на хосте меньше 700 МБ доступной памяти (сторож прерывает прогон при <300 МБ):
+production-VPS 1 ГБ может оказаться слишком мал — тогда тот же скрипт запускают на другом Linux-хосте с Docker
+(`REHEARSE_DUMP=<путь к копии дампа>`, рядом должен лежать `.sha256`).
+Успешная репетиция не разрешает apply: apply остаётся отдельным явным шагом.
+
+## Fixed incident R3 owner-command admission (2026-11-15)
+
+The incident-only adapter in `tools/incident_r3_recovery.py` binds one recovery to
+PR #399, its failed production candidate, the reviewed failed apply and successful
+R3 check run/job pairs, and the exact R3 manifest/confirmation. It adds no server
+command or credential: it dispatches the existing `production-rollback.yml` on
+trusted `main`, preserving production concurrency, environment approval and every
+installed rollback check.
+
+After independent review, merge, and the owner's separate explicit approval of
+this R3 recovery, the authenticated owner (or the owner's explicitly authorized
+connector) can post the exact `COMMAND` defined in that module on PR #399. Creating
+or merging this adapter is not approval to post the command or recover production.
+Other commands, candidates, PRs and rollback inputs cannot use this admission.
+
+The dispatcher rechecks the live, unedited owner comment and the exact latest
+attempts of the reviewed evidence, then persists an incident-wide dispatch claim
+before requesting the fixed workflow. Immediately before SSH, the child rechecks
+owner/PR/input/evidence bindings, trusted main provenance, bot actor and triggering
+actor, first attempts and the original dispatcher claim. Under production workflow
+concurrency it persists a separate incident-wide execution claim. Direct manual
+dispatch, reruns and duplicate owner comments cannot replay this incident.
+
+A dispatch or execution claim is a reservation, not proof of recovery. An uncertain
+API or SSH outcome requires inspecting the existing run and approved operational
+receipts; do not delete claims, retry, or post another recovery command. This
+adapter reads GitHub metadata only and does not inspect production rows, dumps or
+raw logs. The same-head deployment guard repair is a separate change.
+
+## Cloud continuity prerequisites
+
+The owner bridge's exact runner-adoption and R1 recovery grammar, reviewed
+one-time no-key administrative helper/dispatcher upgrade, known installed hashes
+and non-replayable receipt handling are documented in
+[CLOUD_SERVER_CONTROL.md](CLOUD_SERVER_CONTROL.md#continuity-upgrade-runner-adoption-and-r1-admission-2026-11-15).
+
+Controller self-updates and independent controller recovery are specified in
+[complete controller bundles](CLOUD_SERVER_CONTROL.md#complete-controller-bundles-406).
+That additional bootstrap is a reviewed candidate, not installed. Once converted,
+adopt complete bundles rather than changing an individual installed runner; the
+existing product apply/R1/R3 decisions and evidence requirements remain unchanged.
+This upgrade is not installed merely because its PR is merged. R1 apply through
+the workflow now requires original owner-command provenance and an execution
+claim; direct/manual R1 apply dispatch and reruns are refused before SSH. R1 check
+remains available, and the old pinned R3 incident adapter is unchanged. Existing
+server schema/backfill/image guards remain authoritative.

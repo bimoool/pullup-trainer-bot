@@ -430,8 +430,10 @@ async def test_course_without_materializable_slots_keeps_its_rows_startable(sess
     await session.commit()
 
     original = routes_v2._utcnow
-    routes_v2._utcnow = lambda: datetime.now(UTC)
+    clock_at = datetime.now(UTC)
+    routes_v2._utcnow = lambda: clock_at
     try:
+        today = routes_v2._plan_today(user)
         listed = (await v2_get(session, user.telegram_id, "/api/v2/plan")).json()["plan"]["plan_items"]
     finally:
         routes_v2._utcnow = original
@@ -443,7 +445,7 @@ async def test_course_without_materializable_slots_keeps_its_rows_startable(sess
     assert started.status_code == 200, started.text
     assert len(started.json()["blocks"]) == 2
     _, again = await PlanConvergenceService(session).converge_user_plan(
-        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+        training_plan_id=plan.id, today=today,
     )
     assert again.mutations == 0, again.as_dict()
 

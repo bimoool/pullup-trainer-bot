@@ -291,33 +291,21 @@ class OnboardingBaselineResponse(BaseModel):
 
 
 class OnboardingQuestionnaireRequest(BaseModel):
-    """POST /api/onboarding/questionnaire (issue #124, PR 2) — та же анкета,
-    что app/bot/handlers/questionnaire.py собирает по одному вопросу за раз
-    (вес/рост/пол/дата рождения/таймзона), здесь одним запросом — пошаговость
-    (5 экранов, "назад" между ними) держится на фронтенде, не на сервере, тот
-    же приём, что и у самой анкеты бота, где каждый шаг тоже не пишется в БД
-    до самого конца (см. handle_timezone).
+    """Minimal onboarding: timezone and voluntary demographics.
 
-    Валидация значений мирроррит ProfileUpdateRequest выше (тот же смысл
-    полей), но все поля обязательны — анкету нельзя завершить частично, в
-    отличие от последующей правки уже заполненного профиля.
+    Obsolete body fields remain validated for old-client compatibility, but the
+    route never persists them. Weight belongs to the calculation that needs it.
+    """
 
-    timezone — не свободный ввод города, как в боте (там нераспознанный
-    город молча становится Москвой, см. app.bot.timezones — неприемлемо для
-    явного выбора в форме), а строка из GET /api/profile/timezone-options;
-    Intl.DateTimeFormat на фронтенде только предзаполняет значение по
-    умолчанию, реальная проверка — здесь, тем же ZoneInfo, что и у
-    ProfileUpdateRequest."""
-
-    weight_kg: Decimal = Field(gt=0)
-    height_cm: int = Field(gt=0)
-    gender: Literal["male", "female"]
-    birth_date: date
+    weight_kg: Decimal | None = Field(default=None, gt=0)
+    height_cm: int | None = Field(default=None, gt=0)
+    gender: Literal["male", "female"] | None = None
+    birth_date: date | None = None
     timezone: str
 
     @model_validator(mode="after")
     def _validate_values(self) -> "OnboardingQuestionnaireRequest":
-        if self.birth_date > datetime.now(UTC).date():
+        if self.birth_date is not None and self.birth_date > datetime.now(UTC).date():
             raise ValueError("birth_date не может быть в будущем")
         try:
             ZoneInfo(self.timezone)

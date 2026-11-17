@@ -1,0 +1,47 @@
+name: Cloud controller adoption (guarded)
+run-name: Controller adopt ${{ inputs.candidate_sha }} ${{ inputs.operation_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        required: true
+      operation:
+        required: true
+      operation_id:
+        required: true
+      pr_number:
+        required: true
+      request_comment_id:
+        required: true
+permissions:
+  contents: read
+  checks: read
+  actions: read
+  issues: write
+  pull-requests: read
+concurrency:
+  group: production
+  cancel-in-progress: false
+jobs:
+  controller:
+    if: github.repository == 'bimoool/pullup-trainer-bot' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Admit original owner request and adopt complete reviewed bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ secrets.PROD_GUARDED_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          HOST_KEY_SHA256: ${{ vars.VPS_HOST_KEY_SHA256 }}
+          OPERATION: ${{ inputs.operation }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          OPERATION_ID: ${{ inputs.operation_id }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REQUEST_COMMENT_ID: ${{ inputs.request_comment_id }}
+        run: python3 tools/controller_control_client.py

@@ -3,6 +3,43 @@ import { expect, test, type Page } from "@playwright/test";
 import { answerChecksV2, noWakeLock, openPreScreen, playSetsV2 } from "../fixtures/builderFlow";
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
+import { confirmQuestions, mockTelegramWebConfirm } from "../fixtures/telegramMock";
+
+test("V5.6 B: ten five-rep sets rest one minute; strength shows +10 kg", async ({ page }) => {
+  await openAppAs(page, 930_506);
+  await openPreScreen(page, "Подтягивания");
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByTestId("engine-load")).toHaveText("Свой вес");
+  for (let index = 0; index < 10; index++) {
+    if (await page.getByTestId("engine-skip").count()) await page.getByTestId("engine-skip").click();
+    await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+    await expect(page.getByTestId("engine-target")).toContainText(`Подход ${index + 1}/10`);
+    await page.getByRole("textbox", { name: "Результат подхода" }).fill("5");
+    await page.getByTestId("engine-submit").click();
+    await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+    await expect(page.getByTestId("engine-timer")).toHaveText(index < 9 ? /^(0:5[0-9]|1:00)$/ : /^1[45]:[0-5][0-9]$/);
+    await expect(page.getByTestId("engine-next-block")).toHaveCount(index < 9 ? 0 : 1);
+  }
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-load")).toHaveText("+10 кг");
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/5");
+});
+
+test("V5.6 B: accidental technique-stop can be cancelled without skipping sets", async ({ page }) => {
+  await openAppAs(page, 930_507);
+  await openPreScreen(page, "Подтягивания");
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  await mockTelegramWebConfirm(page, [false, true]);
+  await page.getByTestId("engine-submit-technique-broken").click();
+  await expect.poll(() => confirmQuestions(page)).toHaveLength(1);
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/10");
+  await page.getByTestId("engine-submit-technique-broken").click();
+  await expect(page.getByTestId("engine-next-block")).toBeVisible();
+  await expect(page.getByTestId("engine-rest-context")).toContainText("отмечено нарушение техники");
+});
 
 /** Нейтральный баннер повторного ответа (`already_completed`, итог неизвестен) — не должен заменять известный итог
  * первого завершения (ответ «Сохранить» вместо первого завершения). */
@@ -24,6 +61,7 @@ test("V5.6 A: после последнего подхода — подтвер�
   await openPreScreen(page, "Подтягивания");
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await expect(page.getByTestId("engine-load")).toHaveText("Свой вес");
 
   // AMRAP: показана обязательная минимальная цель p4, а не «Максимум».
   await playSetsV2(page, ["5", "5", "5"]);

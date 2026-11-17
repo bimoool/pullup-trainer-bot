@@ -57,3 +57,35 @@ async def test_edit_invalid_weight_does_not_advance_state(session, user: User, b
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="не число"), session=session)
 
     assert await fsm.get_state() == ProfileEditStates.waiting_for_weight.state
+
+
+async def test_obsolete_height_button_does_not_collect_a_new_value(session, user, bot, dispatcher):
+    await UserRepository(session).update_profile(user.id, height_cm=175)
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="profile_edit:height"), session=session,
+    )
+    assert await fsm.get_state() is None
+    await session.refresh(user)
+    assert user.height_cm == 175
+
+
+async def test_stale_height_fsm_does_not_change_existing_history(session, user, bot, dispatcher):
+    await UserRepository(session).update_profile(user.id, height_cm=175)
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(ProfileEditStates.waiting_for_height)
+    await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="176"), session=session)
+    await session.refresh(user)
+    assert user.height_cm == 175
+    assert await fsm.get_state() is None
+
+
+async def test_profile_timezone_choice_uses_the_person_who_pressed_the_button(session, user, bot, dispatcher):
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(ProfileEditStates.waiting_for_timezone)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="profile_timezone:Asia/Yekaterinburg"), session=session,
+    )
+    await session.refresh(user)
+    assert user.timezone == "Asia/Yekaterinburg"
+    assert await fsm.get_state() is None

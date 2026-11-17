@@ -53,10 +53,11 @@ for (const width of WIDTHS) {
           await expect(titles.filter({ hasText: title }).first()).toBeVisible();
         }
         expect(await screen.locator(".settings-group").count()).toBeGreaterThanOrEqual(await titles.count());
-        // строки профиля: 4 строки с иконкой-SVG и разделителями
+        // строки профиля: 3 строки (новый сбор роста отключён) с иконкой-SVG и разделителями
         const profileRows = page.getByTestId("settings-profile-group").locator(".settings-row");
-        await expect(profileRows).toHaveCount(4);
-        await expect(profileRows.locator("svg")).toHaveCount(4);
+        await expect(profileRows).toHaveCount(3);
+        await expect(profileRows.locator("svg")).toHaveCount(3);
+        await expect(page.getByRole("textbox", { name: "Рост" })).toHaveCount(0);
         const second = await profileRows.nth(1).evaluate((el) => getComputedStyle(el).borderTopWidth);
         expect(second, "разделитель между строками").not.toBe("0px");
         // нативные контролы есть и доступны по имени

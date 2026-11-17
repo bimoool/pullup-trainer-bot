@@ -181,7 +181,7 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
 
       {error && <p className="error-banner" data-testid="body-metrics-error">{error}</p>}
 
-      {editor === null ? (
+      {metric !== "height_cm" && (editor === null ? (
         <Button className="vs-primary" mode="filled" size="m" stretched data-testid="body-metrics-add" onClick={() => openEditor({ mode: "add" })}>
           <Icon name="plus" size={18} className="vp-icon-lead" />Добавить замер
         </Button>
@@ -215,7 +215,7 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
             </Button>
           </div>
         </div>
-      )}
+      ))}
 
       <div className="history-list vs-rows" data-testid="body-metrics-list">
         {history.items.map((entry) => (
@@ -226,9 +226,9 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
               <strong data-testid="body-metrics-row-value">{show(entry.value)}</strong>
             </p>
             <div className="band-create-actions">
-              <Button className="vs-chip" mode="outline" size="s" disabled={busy} data-testid="body-metrics-edit" onClick={() => openEditor({ mode: "edit", entry })}>
+              {metric !== "height_cm" && <Button className="vs-chip" mode="outline" size="s" disabled={busy} data-testid="body-metrics-edit" onClick={() => openEditor({ mode: "edit", entry })}>
                 Изменить
-              </Button>
+              </Button>}
               <Button className="vs-chip" mode="outline" size="s" disabled={busy} data-testid="body-metrics-delete" onClick={() => void handleDelete(entry)}>
                 Удалить
               </Button>

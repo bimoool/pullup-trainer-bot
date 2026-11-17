@@ -112,8 +112,8 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
 /** Текст для reason=applicable=false (issue #104) — та же схема, что
  * GTO_REASON_TEXT выше, "not_onboarded" сюда не попадает по той же причине. */
 const WSF_REASON_TEXT: Record<string, string> = {
-  missing_gender: "Укажи пол в анкете бота, чтобы увидеть свой разряд WSF.",
-  missing_weight: "Укажи свой вес в анкете бота, чтобы увидеть свой разряд WSF.",
+  missing_gender: "Пол можно добавить добровольно в настройках профиля для расчёта разряда WSF.",
+  missing_weight: "Для расчёта разряда WSF не хватает данных о массе тела.",
   no_workouts: "Внеси тренировку блока Б на отягощении или собственном весе, чтобы узнать свой разряд WSF.",
 };
 

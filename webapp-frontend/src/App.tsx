@@ -512,6 +512,7 @@ export function App() {
         <HomeScreen
           initDataRaw={state.initDataRaw}
           onOpenPlans={() => setTab("plans")}
+          onStartSession={(planItemIds, options) => setV2Session({ planItemIds, ...options })}
           onOpenJournalLog={() => { setJournalRestore(null); setJournalLogWorkoutId(null); setJournalLogRequest((value) => value + 1); setTab("journal"); }}
           onStartWorkout={startWorkout}
           onLogWorkout={logWorkout}

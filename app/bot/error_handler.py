@@ -2,7 +2,8 @@
 необработанное исключение в любом хендлере раньше просто гасилось aiogram'ом
 молча (см. диагностику бага "Пропустить" у комментария: тренировка терялась
 без единого сообщения об ошибке, а узнать об этом можно было только вручную
-читая логи VPS в момент падения). Теперь: полная трассировка в лог,
+читая логи VPS в момент падения). Теперь: диагностика в лог (класс и позиции стека, у DBAPIError ещё SQLSTATE;
+без произвольного текста исключения, причин, исходника и локальных значений),
 понятное сообщение пользователю, событие в БД (event_type=
 "unhandled_exception", отдельно от ручных "feedback_reported") и личное
 уведомление админу — тот же канал, что и у "Сообщить о проблеме"."""
@@ -13,6 +14,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import ErrorEvent, Update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
@@ -20,8 +22,14 @@ from app.config import settings
 from app.db.base import async_session_factory
 from app.db.repositories.events import EventRepository
 from app.db.repositories.users import UserRepository
+from app.diagnostics import exception_diagnostic as _exception_diagnostic
+from app.diagnostics import safe_exception_trace as _safe_exception_trace
 
 logger = logging.getLogger(__name__)
+
+
+def _log_exception(message: str, exception: BaseException) -> None:
+    logger.error("%s; %s", message, _safe_exception_trace(exception))
 
 
 def _extract_context(update: Update) -> tuple[int | None, int | None]:
@@ -50,7 +58,7 @@ async def _record_unhandled_exception(
     await EventRepository(session).create(
         user_id=user.id,
         event_type="unhandled_exception",
-        payload={"update_id": update_id, "exception": repr(exception)},
+        payload={"update_id": update_id, "exception": _exception_diagnostic(exception)},
     )
 
 
@@ -63,9 +71,9 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
         # обороны, у неё самой не должно быть возможности уронить бота, даже
         # если в самом хендлере ошибок есть баг.
         try:
-            logger.error(
-                "Необработанное исключение при обработке update id=%s",
-                event.update.update_id, exc_info=event.exception,
+            _log_exception(
+                f"Необработанное исключение при обработке update id={event.update.update_id}",
+                event.exception,
             )
 
             chat_id, telegram_id = _extract_context(event.update)
@@ -79,8 +87,8 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
             if chat_id is not None:
                 try:
                     await bot.send_message(chat_id, texts.UNEXPECTED_ERROR_MESSAGE)
-                except TelegramAPIError:
-                    logger.warning("error_handler: не удалось уведомить пользователя", exc_info=True)
+                except TelegramAPIError as exception:
+                    _log_exception("error_handler: не удалось уведомить пользователя", exception)
 
             if telegram_id is not None:
                 # Своя сессия, не data["session"]: DbSessionMiddleware к этому
@@ -93,18 +101,31 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
                             update_id=event.update.update_id, exception=event.exception,
                         )
                         await session.commit()
-                    except Exception:
-                        logger.exception("error_handler: не удалось записать unhandled_exception в events")
+                    except DBAPIError as exception:
+                        _log_exception("error_handler: не удалось записать unhandled_exception в events", exception)
+                    except Exception as exception:
+                        diagnostic = _safe_exception_trace(exception)
+                        logger.exception(
+                            "error_handler: не удалось записать unhandled_exception в events; %s",
+                            diagnostic, exc_info=False,
+                        )
 
                 notification = texts.ADMIN_UNHANDLED_EXCEPTION_NOTIFICATION.format(
-                    telegram_id=telegram_id, update_id=event.update.update_id, exception=repr(event.exception),
+                    telegram_id=telegram_id, update_id=event.update.update_id,
+                    exception=_exception_diagnostic(event.exception),
                 )
                 for admin_id in settings.admin_id_list:
                     try:
                         await bot.send_message(admin_id, notification, parse_mode=None)
-                    except TelegramAPIError:
-                        logger.warning("error_handler: не удалось уведомить админа %s", admin_id, exc_info=True)
-        except Exception:
-            logger.exception("error_handler: внутренний сбой в самом обработчике ошибок")
+                    except TelegramAPIError as exception:
+                        _log_exception("error_handler: не удалось уведомить админа", exception)
+        except DBAPIError as exception:
+            _log_exception("error_handler: внутренний сбой в самом обработчике ошибок", exception)
+        except Exception as exception:
+            diagnostic = _safe_exception_trace(exception)
+            logger.exception(
+                "error_handler: внутренний сбой в самом обработчике ошибок; %s",
+                diagnostic, exc_info=False,
+            )
 
         return True

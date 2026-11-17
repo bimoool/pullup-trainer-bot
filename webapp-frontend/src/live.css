@@ -370,6 +370,10 @@
   gap: 6px;
   margin: 0 0 var(--vp-sp-3);
 }
+/* #359: full 1RM speed labels need wider targets than the five effort segments. */
+.one-rm-speed {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
 /* #305 V5.6 §11: ответы о технике/отдыхе по блоку (да / нет / не знаю). */
 .live-checks {
   display: grid;

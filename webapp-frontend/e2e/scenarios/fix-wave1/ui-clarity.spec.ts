@@ -87,13 +87,9 @@ async function fillOnboarding(page: Page, tag: string, labels: { baseline: boole
     await shot(page, `${tag}-onb-1b-after-baseline`);
     await page.getByRole("button", { name: "Продолжить" }).click();
   }
-  await expectCaption(page, "Твой вес в кг?", "input");
-  await shot(page, `${tag}-onb-2-weight`);
-  await page.getByLabel("Твой вес в кг?").fill("78");
-  await page.getByRole("button", { name: "Далее" }).click();
-  await expectCaption(page, "Рост в см?", "input");
-  await page.getByLabel("Рост в см?").fill("180");
-  await page.getByRole("button", { name: "Далее" }).click();
+  await expect(page.getByLabel("Твой вес в кг?")).toHaveCount(0);
+  await expect(page.getByLabel("Рост в см?")).toHaveCount(0);
+  await shot(page, `${tag}-onb-2-optional-profile`);
   await expectCaption(page, "Пол?", "select");
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();
@@ -269,7 +265,8 @@ for (const { reps, headline, line } of [
     await shot(page, `after-baseline-${reps}`);
     // следующий шаг ведёт в существующий поток: Продолжить → анкета
     await page.getByRole("button", { name: "Продолжить" }).click();
-    await expect(page.getByLabel("Твой вес в кг?")).toBeVisible();
+    await expect(page.getByLabel("Пол?")).toBeVisible();
+    await expect(page.getByText("Необязательно. Нужен для нормативов и сравнений.")).toBeVisible();
     expect(noWakeLock(consoleErrors)).toEqual([]);
     expect(apiFailures).toEqual([]);
   });

@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import Select, and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BlockType, ElectiveWorkout, Workout, WorkoutStatus
@@ -87,19 +87,21 @@ def _workout_signature(workout: Workout, exercise_a_id: int, exercise_b_id: int)
 
 
 class LegacyHistoryConvergenceService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, read_only: bool = False) -> None:
         self._session = session
+        self._read_only = read_only
         self._repo = LegacyConvergenceRepository(session)
+
+    def _query(self, query: Select) -> Select:
+        return query if self._read_only else query.with_for_update()
 
     async def _copies(self, user_id: int) -> list[TrainingSession]:
         result = await self._session.execute(
-            select(TrainingSession)
-            .where(
+            self._query(select(TrainingSession).where(
                 TrainingSession.user_id == user_id,
                 TrainingSession.origin.in_((SessionOrigin.LEGACY_BACKFILL.value, SessionOrigin.LEGACY_ELECTIVE.value)),
             )
-            .order_by(TrainingSession.id)
-            .with_for_update(),
+            .order_by(TrainingSession.id)),
         )
         return list(result.scalars().all())
 
@@ -108,10 +110,10 @@ class LegacyHistoryConvergenceService:
         читатели его не используют), электив — по source."""
         rows = (
             await self._session.execute(
-                select(TrainingSession).where(
+                self._query(select(TrainingSession).where(
                     TrainingSession.user_id == user_id, TrainingSession.origin.is_(None),
                     TrainingSession.status == SessionStatus.COMPLETED,
-                ).order_by(TrainingSession.id).with_for_update(),
+                ).order_by(TrainingSession.id)),
             )
         ).scalars().all()
         if not rows:
@@ -138,6 +140,8 @@ class LegacyHistoryConvergenceService:
             await self._session.flush()
 
     async def converge_user(self, user_id: int, *, apply: bool) -> UserConvergenceReport:
+        if apply and self._read_only:
+            raise ValueError("read-only convergence cannot apply")
         report = UserConvergenceReport(user_id)
         repo = self._repo
         plan_created_at = (
@@ -219,8 +223,7 @@ class LegacyHistoryConvergenceService:
         ``_classify_unlabelled`` в apply помечает legacy_elective): иначе dry-run их не видел бы и обещал
         создать копию, которую apply не создаст (dry-run != apply)."""
         result = await self._session.execute(
-            select(TrainingSession)
-            .where(
+            self._query(select(TrainingSession).where(
                 TrainingSession.user_id == user_id,
                 or_(
                     TrainingSession.origin == SessionOrigin.LEGACY_ELECTIVE.value,
@@ -230,8 +233,7 @@ class LegacyHistoryConvergenceService:
                     ),
                 ),
             )
-            .order_by(TrainingSession.id)
-            .with_for_update(),
+            .order_by(TrainingSession.id)),
         )
         return list(result.scalars().all())
 

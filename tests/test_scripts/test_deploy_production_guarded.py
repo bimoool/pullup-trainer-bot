@@ -84,6 +84,7 @@ if args[0] == "compose":
     if sub == "port": out(env.get("STUB_WEB_PORT", "127.0.0.1:8001")); sys.exit(0)
     if sub == "stop":
         for s in rest: st["running"][s] = False
+        if env.get("MISSING_PLAN_AFTER_STOP"): st["missing_plans"] = 1
         save(); sys.exit(0)
     if sub == "build":
         if env.get("FAIL_BUILD") == rest[-1]: sys.stderr.write("build failed\n"); sys.exit(1)
@@ -106,6 +107,29 @@ if args[0] == "compose":
             bad = [{"user_id": 7, "guard_violations": ["x"]}] if env.get("REPAIR_GUARD") else []
             out(json.dumps({"mode": "dry-run", "users": 3, "total_mutations": 2, "users_detail": bad})); sys.exit(0)
         if "backfill_multi_program" in cmd:
+            if "--verify-only" in cmd or "--verify-compatible" in cmd:
+                if env.get("VERIFY_ONLY_WRITES") and not st.get("running", {}).get("app"):
+                    st["v2_version"] += 1; save()
+                if env.get("VERIFY_ONLY_FAIL") or (st.get("missing_plans") and not env.get("SAFE_EMPTY_PLANS")) or (env.get("VERIFY_ONLY_FAIL_AFTER_STOP") and not st.get("running", {}).get("app")):
+                    sys.stderr.write("incomplete migration coverage\n"); sys.exit(1)
+                result = {"mode": "verify-only", "verified": True, "errors": []}
+                if "--verify-compatible" in cmd:
+                    empty = st.get("missing_plans", 0)
+                    other = int(env.get("NON_ONBOARDED_PLANS", "0"))
+                    result.update(mode="verify-compatible", history_mutations=0, unresolved=0, counts={
+                        "users_onboarded": 3, "onboarded_with_plan": 3-empty,
+                        "compatible_onboarded_without_plan": empty, "non_onboarded_with_plan": other,
+                        "training_plans_total": 3-empty+other, "blocked_without_plan": 0,
+                        "users_total": 3+other, "compatible_non_onboarded_without_plan": 0,
+                    })
+                    malformed = env.get("BAD_COMPATIBLE_RESULT")
+                    if malformed == "mode": result["mode"] = "verify-only"
+                    if malformed == "missing": del result["counts"]["blocked_without_plan"]
+                    if malformed == "bool": result["counts"]["blocked_without_plan"] = False
+                    if malformed == "equation": result["counts"]["training_plans_total"] += 1
+                    if malformed == "history": result["history_mutations"] = 1
+                out("RESULT-JSON " + json.dumps(result))
+                sys.exit(0)
             if "--converge-history" in cmd:
                 out("DRY-RUN (ничего не записано)")
                 out("RESULT-JSON " + json.dumps({"mode": "dry-run", "users": 3, "mutations": int(env.get("CONVERGE_MUTATIONS", "0")),
@@ -114,15 +138,18 @@ if args[0] == "compose":
             n = st.get("backfill_applied", 0)
             if "--dry-run" in cmd:
                 if env.get("BACKFILL_DRY_WRITES"): st["v2_version"] += 1; save()
-                will, already = (0, 3) if n else (3, 0)
+                will = st.get("missing_plans", 0 if n else 3)
+                already = 3 - will
                 out("DRY-RUN (ничего не записано)\nОнбордившихся пользователей: %s\n  будет мигрировано: %d\n"
                     "  уже было мигрировано (пропущено): %d\nБудет создано TrainingSession (обычных): 20" % (env.get("STUB_ONBOARDED", "3"), will, already))
                 sys.exit(0)
             if env.get("FAIL_BACKFILL"): sys.stderr.write("Traceback: boom\n"); sys.exit(1)
             st["backfill_applied"] = n + 1
-            if n == 0 or env.get("BACKFILL_NOT_IDEMPOTENT"): st["v2_version"] += 1
+            missing = st.get("missing_plans", 0 if n else 3)
+            if missing or env.get("BACKFILL_NOT_IDEMPOTENT"): st["v2_version"] += 1
+            st["missing_plans"] = 0
             event("backfill"); save()
-            migrated, already = (3, 0) if n == 0 else (0, 3)
+            migrated, already = missing, 3 - missing
             mark = "РАСХОЖДЕНИЕ" if env.get("BACKFILL_MISMATCH") else "OK"
             out("Прогон завершён\nОнбордившихся пользователей: 3\n  мигрировано в этом прогоне: %d\n"
                 "  уже было мигрировано (пропущено): %d\nTrainingPlan всего: 3 (ожидается 3) [OK]\n"
@@ -136,7 +163,14 @@ if args[0] == "inspect":
     elif "com.docker.compose.project" in fmt: out(env.get("STUB_DB_PROJECT", project))
     elif ".State.Running" in fmt: out("true" if cid == "dbc" or st["running"].get(cid.split("-")[0]) else "false")
     elif ".State.Restarting" in fmt: out("false")
-    elif ".State.Health" in fmt: out("healthy")
+    elif ".State.Health" in fmt:
+        svc = cid.split("-")[0]
+        if st.get("up_calls"):
+            reads = st.setdefault("health_reads", {})
+            n = reads.get(svc, 0); reads[svc] = n + 1; save()
+            sequence = env.get("HEALTH_SEQUENCE_" + svc.upper(), "healthy").split(",")
+            out(sequence[min(n, len(sequence) - 1)])
+        else: out("healthy")
     elif ".Config.Image" in fmt: out(project + "-" + cid.split("-")[0])
     elif ".Image" in fmt: out(st["container"][cid.split("-")[0]])
     sys.exit(0)
@@ -172,11 +206,22 @@ if args[0] == "exec":
     if target == "postgres":
         if "ALTER DATABASE" in sql:
             if env.get("FAIL_SWAP"): sys.exit(1)
+            st["swap_sql"] = sql
             st["swapped"] = True; st["rev"] = st.get("dump_rev", st["rev"]); st["v2_version"] = 0; st["legacy_changed"] = False; save(); sys.exit(0)
         if "pg_stat_activity" in sql: out("0"); sys.exit(0)
         sys.exit(0)
     restore = target.endswith("_restore_check")
     rb = "_rb_" in target
+    if "planless-candidate-host" in sql:
+        L("planless-candidate-host")
+        if env.get("FAIL_CANDIDATE_DIAGNOSTIC"):
+            sys.stderr.write("PRIVATE-CANDIDATE-ERROR"); sys.exit(1)
+        out(env.get("CANDIDATE_DIAGNOSTIC_ROW", "1|3|3|3|0|0|0|0|3|" + "|".join(["0"] * 15))); sys.exit(0)
+    if "planless-source-aggregate" in sql:
+        L("planless-source-aggregate")
+        if env.get("FAIL_SOURCE_DIAGNOSTIC"):
+            sys.stderr.write("PRIVATE-DIAGNOSTIC-ERROR"); sys.exit(1)
+        out(env.get("SOURCE_DIAGNOSTIC_ROW", "1|3|0|0|1|1|0|0|1|0|1|0|0|0|0|0")); sys.exit(0)
     if "alembic_version" in sql:
         if restore: out(env.get("RESTORED_REV", st["rev"]))
         elif rb: out(st.get("dump_rev", "none"))
@@ -226,11 +271,20 @@ if args[0] == "fetch": sys.exit(0)
 if args[0] == "merge-base": sys.exit(1 if os.environ.get("NOT_ANCESTOR") else 0)
 if args[0] == "cat-file":
     obj = args[-1]
+    if args[1] == "-s" and obj.endswith(":scripts/sql/planless_classification.sql"):
+        print(os.environ.get("CANDIDATE_QUERY_SIZE", str(Path(os.environ["STUB_PLANLESS_SQL"]).stat().st_size))); sys.exit(0)
     if os.environ.get("NO_COMMIT") and obj.endswith("^{commit}") and not obj.startswith("37b989c"): sys.exit(1)
     sys.exit(0)
 if args[0] == "checkout":
     st["head"] = args[-1]; st_path.write_text(json.dumps(st)); sys.exit(0)
-if args[0] == "show": print("-- generator: select ... from information_schema.tables ..."); sys.exit(0)
+if args[0] == "ls-tree":
+    print(os.environ.get("CANDIDATE_QUERY_ENTRY", "100644 blob " + "a" * 40 + "\tscripts/sql/planless_classification.sql")); sys.exit(0)
+if args[0] == "show":
+    if args[-1].endswith(":scripts/sql/planless_classification.sql"):
+        if os.environ.get("CANDIDATE_QUERY_BAD_HASH"): print("SELECT private_data FROM users")
+        else: sys.stdout.buffer.write(Path(os.environ["STUB_PLANLESS_SQL"]).read_bytes())
+        sys.exit(0)
+    print("-- generator: select ... from information_schema.tables ..."); sys.exit(0)
 sys.exit(0)
 """
 
@@ -301,6 +355,7 @@ def sandbox(tmp_path: Path):
         "PROD_MIN_MEM_MB": "0",
         "STUB_STATE": str(state),
         "STUB_LOG": str(log),
+        "STUB_PLANLESS_SQL": str(ROOT / "scripts/sql/planless_classification.sql"),
         "TMPDIR": str(tmpdir),
     }
 
@@ -615,6 +670,25 @@ def test_healthcheck_failure_stops_services_again_and_points_to_r3(sandbox):
     assert "healthcheck" in proc.stderr and "rollback-production-guarded.sh R3" in proc.stderr
 
 
+def test_transient_unhealthy_container_recovers_before_deadline(sandbox):
+    proc, _log, state = sandbox(
+        SHA, "apply", TOKEN, HEALTH_SEQUENCE_WEB="unhealthy,unhealthy,healthy",
+        PROD_HEALTH_TIMEOUT="20",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert state["health_reads"]["web"] >= 2
+    assert state["running"] == {"app": True, "web": True}
+
+
+def test_persistently_unhealthy_container_stops_services_and_points_to_r3(sandbox):
+    proc, log, state = sandbox(SHA, "apply", TOKEN, HEALTH_SEQUENCE_WEB="unhealthy")
+    assert proc.returncode == 1
+    up = idx(log, "up -d --no-build app web")
+    assert up >= 0 and idx(log, "stop app web", up + 1) > up
+    assert state["running"] == {"app": False, "web": False}
+    assert "health" in proc.stderr and "rollback-production-guarded.sh R3" in proc.stderr
+
+
 @pytest.mark.parametrize(("sig", "num"), [(signal.SIGTERM, 15), (signal.SIGHUP, 1), (signal.SIGINT, 2)])
 @pytest.mark.parametrize("hang_on", ["alembic upgrade head", "backfill_multi_program.py --dry-run"])
 def test_signal_during_downtime_stops_services_and_oneoffs(sandbox, sig, num, hang_on):
@@ -783,6 +857,11 @@ def test_r3_restores_the_dump_into_a_new_db_swaps_and_starts_previous_images(san
     assert all(i >= 0 for i in order) and order == sorted(order), (order, log)
     assert not any("dropdb" in line for line in log), "R3 never drops the live database (it is renamed and kept)"
     assert state["swapped"] is True and state["rev"] == OLD_REV
+    assert re.fullmatch(
+        r"BEGIN; ALTER DATABASE pullup RENAME TO pullup_failed_\d{14}; "
+        r"ALTER DATABASE pullup_rb_\d{14} RENAME TO pullup; COMMIT;\s*",
+        state["swap_sql"],
+    )
     assert state["container"] == {"app": "sha256:old-app", "web": "sha256:old-web"}
     assert state["running"] == {"app": True, "web": True}
     assert "DATA LOSS WINDOW" in proc.stdout and "ROLLBACK R3 OK" in proc.stdout
@@ -825,3 +904,132 @@ def test_production_scripts_do_not_touch_the_staging_or_plain_deploy_files():
     assert "deploy-staging-guarded-run.sh" not in text.replace("deploy-staging(-guarded)?-run", "")
     assert "post-deploy-cleanup.sh" not in RUN.read_text().split("set -euo pipefail", 1)[1]
     assert "staging_data_check.sh" not in text
+
+
+def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-compatible")]) == 4
+    assert idx(log, "--verify-compatible") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["backfill_applied"] == 1 and state["v2_version"] == 1
+    assert state["running"] == {"app": True, "web": True}
+
+
+def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    # Synthetic root ownership: run the exact sanitizer under the fixture owner.
+    script = sandbox.root / "synthetic-guard.sh"
+    script.write_text(RUN.read_text().replace("st.st_uid != 0", "st.st_uid not in (0, os.getuid(), os.stat('/tmp').st_uid)"))
+    proc, log, state = sandbox(SHA, "apply", TOKEN, script=script, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
+    assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["running"] == {"app": True, "web": True}
+    assert '"status":"UNCLASSIFIED"' in proc.stderr
+    assert '"errors":{"EXECUTION_ERROR_UNKNOWN":1}' in proc.stderr
+    assert "COMPAT-DIAG " in proc.stderr
+
+
+def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_WRITES="1")
+    assert proc.returncode == 1 and "verify-compatible wrote to the database" in proc.stderr
+    assert state["running"] == {"app": False, "web": False}
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+
+
+def test_initial_migration_retains_full_backfill_path(sandbox):
+    # Initial migration is still the original full backfill path, not a silent skip.
+    proc, log, state = sandbox(SHA, "apply", TOKEN)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert idx(log, "--verify-compatible") == -1
+    assert state["backfill_applied"] == 2
+
+
+def test_same_head_with_mixed_migrated_and_missing_plans_refuses_before_stop(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
+    assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
+    assert idx(log, "--verify-compatible") >= 0
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["missing_plans"] == 1 and state["backfill_applied"] == 1
+    assert state["v2_version"] == 1
+    assert state["running"] == {"app": True, "web": True}
+
+
+@pytest.mark.parametrize(("race", "reason"), [
+    ("MISSING_PLAN_AFTER_STOP", "runtime classification changed"),
+    ("VERIFY_ONLY_FAIL_AFTER_STOP", "verify-compatible failed (stopped)"),
+])
+def test_same_head_coverage_race_refuses_without_applying_backfill(sandbox, race, reason):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=0)
+    proc, log, state = sandbox(
+        SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, **{race: "1"},
+    )
+    assert proc.returncode == 1 and reason in proc.stderr
+    assert idx(log, "--verify-compatible") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["missing_plans"] == (1 if race == "MISSING_PLAN_AFTER_STOP" else 0)
+    assert state["backfill_applied"] == 1
+    assert state["v2_version"] == 1
+    assert state["running"] == {"app": False, "web": False}
+    assert "R1" in proc.stderr
+    assert not any("backfill_started_at=" in p.read_text() for p in (sandbox.root / "backups").glob("*.manifest"))
+
+
+@pytest.mark.parametrize(("empty", "other"), [(1, 0), (3, 0), (1, 2), (0, 2)])
+def test_same_schema_runtime_classification_accepts_empty_and_non_onboarded_plans(sandbox, empty, other):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=empty)
+    proc, log, state = sandbox(
+        SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD,
+        SAFE_EMPTY_PLANS="1", NON_ONBOARDED_PLANS=str(other), INV_NOPLAN=str(empty), INV_PLANS=str(3-empty+other),
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-compatible")]) == 4
+    assert idx(log, "--verify-only") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["v2_version"] == 1 and state["backfill_applied"] == 1
+    assert state["missing_plans"] == empty
+    assert state["running"] == {"app": True, "web": True}
+    assert not any("backfill_started_at=" in p.read_text() for p in (sandbox.root / "backups").glob("*.manifest"))
+
+
+@pytest.mark.parametrize("malformed", ["mode", "missing", "bool", "equation", "history"])
+def test_same_schema_rejects_invalid_compatibility_machine_results_before_stop(sandbox, malformed):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, BAD_COMPATIBLE_RESULT=malformed)
+    assert proc.returncode == 1 and "invalid verify-compatible machine result" in proc.stderr
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert state["running"] == {"app": True, "web": True}
+
+
+@pytest.mark.parametrize("bad", [None, "secret-row-and-id", "0|" + "0|" * 14 + "0", "1|" + "0|" * 14 + "1000000001"])
+def test_preflight_current_source_diagnostic_is_aggregate_only_and_never_admission(sandbox, bad):
+    kwargs = {} if bad is None else {"SOURCE_DIAGNOSTIC_ROW": bad}
+    proc, log, state = sandbox(SHA, "preflight", **kwargs)
+    assert proc.returncode == 0, proc.stderr
+    rows = [line.removeprefix("PLANLESS-SOURCES ") for line in proc.stderr.splitlines() if line.startswith("PLANLESS-SOURCES ")]
+    assert len(rows) == 1
+    result = json.loads(rows[0])
+    if bad is None:
+        assert result["scope"] == "CURRENT_SOURCES_NOT_RELEASE_ACCEPTANCE"
+        assert result["counts"]["USERS_TOTAL"] == 3
+        assert result["counts"]["NATIVE_COMPLETED_SESSIONS"] == 1
+    else:
+        assert result == {"status": "DIAG_UNAVAILABLE"}
+        assert bad not in proc.stdout + proc.stderr
+    assert log.count("planless-source-aggregate") == 1
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx(log, "compose -p pullup-trainer-bot run") == -1
+    assert state["running"] == {"app": True, "web": True}
+    assert state.get("backfill_applied", 0) == 0
+
+
+def test_source_diagnostic_sql_failure_exports_no_database_error(sandbox):
+    proc, _, _ = sandbox(SHA, "preflight", FAIL_SOURCE_DIAGNOSTIC="1")
+    assert proc.returncode == 0
+    assert 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' in proc.stderr
+    assert "PRIVATE-DIAGNOSTIC-ERROR" not in proc.stdout + proc.stderr

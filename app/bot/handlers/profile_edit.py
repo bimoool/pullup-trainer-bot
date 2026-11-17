@@ -12,9 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.handlers.menu import render_profile
-from app.bot.keyboards import cancel_keyboard, gender_keyboard, profile_edit_keyboard
+from app.bot.keyboards import (
+    cancel_keyboard,
+    gender_keyboard,
+    profile_edit_keyboard,
+    timezone_choice_keyboard,
+)
 from app.bot.states import ProfileEditStates
-from app.bot.timezones import resolve_city_timezone
+from app.bot.timezones import TIMEZONE_DISPLAY_LABELS
 from app.db.models import Gender
 from app.db.repositories.users import UserRepository
 
@@ -22,7 +27,6 @@ router = Router()
 
 _FIELD_STATES = {
     "weight": ProfileEditStates.waiting_for_weight,
-    "height": ProfileEditStates.waiting_for_height,
     "gender": ProfileEditStates.waiting_for_gender,
     "birth_date": ProfileEditStates.waiting_for_birth_date,
     "timezone": ProfileEditStates.waiting_for_timezone,
@@ -46,19 +50,26 @@ async def handle_profile_edit_close(callback: CallbackQuery, state: FSMContext, 
 @router.callback_query(F.data.startswith("profile_edit:"))
 async def handle_profile_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
     field = callback.data.removeprefix("profile_edit:")
+    if field == "height":
+        await state.clear()
+        await callback.answer("Новый сбор роста отключён; история сохранена", show_alert=True)
+        return
+    if field not in _FIELD_STATES:
+        await callback.answer("Поле недоступно", show_alert=True)
+        return
     await state.set_state(_FIELD_STATES[field])
     await callback.message.edit_reply_markup(reply_markup=None)
 
     if field == "weight":
         await callback.message.answer(texts.QUESTIONNAIRE_WEIGHT_PROMPT, reply_markup=cancel_keyboard())
-    elif field == "height":
-        await callback.message.answer(texts.QUESTIONNAIRE_HEIGHT_PROMPT, reply_markup=cancel_keyboard())
     elif field == "gender":
         await callback.message.answer(texts.QUESTIONNAIRE_GENDER_PROMPT, reply_markup=gender_keyboard())
     elif field == "birth_date":
         await callback.message.answer(texts.QUESTIONNAIRE_BIRTH_DATE_PROMPT, reply_markup=cancel_keyboard())
     elif field == "timezone":
-        await callback.message.answer(texts.QUESTIONNAIRE_TIMEZONE_PROMPT, reply_markup=cancel_keyboard())
+        await callback.message.answer(
+            texts.QUESTIONNAIRE_TIMEZONE_CHOICE_PROMPT, reply_markup=timezone_choice_keyboard("profile_timezone"),
+        )
     await callback.answer()
 
 
@@ -88,11 +99,8 @@ async def handle_edit_weight(message: Message, state: FSMContext, session: Async
 
 @router.message(ProfileEditStates.waiting_for_height)
 async def handle_edit_height(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    raw = (message.text or "").strip()
-    if not raw.isdigit() or int(raw) <= 0:
-        await message.answer(texts.QUESTIONNAIRE_HEIGHT_INVALID)
-        return
-    await _save_and_confirm(message, state, session, telegram_id=message.from_user.id, height_cm=int(raw))
+    await state.clear()
+    await message.answer("Новый сбор роста отключён; история сохранена", reply_markup=profile_edit_keyboard())
 
 
 @router.callback_query(ProfileEditStates.waiting_for_gender, F.data.startswith("gender:"))
@@ -118,9 +126,17 @@ async def handle_edit_birth_date(message: Message, state: FSMContext, session: A
 
 @router.message(ProfileEditStates.waiting_for_timezone)
 async def handle_edit_timezone(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    city = (message.text or "").strip()
-    if not city:
-        return
-    await _save_and_confirm(
-        message, state, session, telegram_id=message.from_user.id, timezone=resolve_city_timezone(city),
+    await message.answer(
+        texts.QUESTIONNAIRE_TIMEZONE_CHOICE_PROMPT, reply_markup=timezone_choice_keyboard("profile_timezone"),
     )
+
+
+@router.callback_query(ProfileEditStates.waiting_for_timezone, F.data.startswith("profile_timezone:"))
+async def handle_edit_timezone_choice(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    timezone = callback.data.removeprefix("profile_timezone:")
+    if timezone not in TIMEZONE_DISPLAY_LABELS:
+        await callback.answer("Выбери часовой пояс из списка.", show_alert=True)
+        return
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _save_and_confirm(callback.message, state, session, telegram_id=callback.from_user.id, timezone=timezone)
+    await callback.answer()

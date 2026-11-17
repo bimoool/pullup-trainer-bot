@@ -71,6 +71,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -829,6 +830,169 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     return report
 
 
+async def verify_migrated_database(session: AsyncSession) -> dict:
+    """Verify existing migration coverage without calendar materialization or any writes.
+
+    Requires a fresh session: the server-enforced repeatable-read/read-only transaction
+    protects this mode even if a future dry-run implementation accidentally writes.
+    """
+    if session.in_transaction():
+        raise ValueError("verify-only requires a fresh session")
+    await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+    errors: list[str] = []
+    onboarded = int(await session.scalar(text(
+        "SELECT count(*) FROM users WHERE onboarding_completed_at IS NOT NULL"
+    )))
+    checks = {
+        "onboarded_without_plan": """SELECT count(*) FROM users u
+            WHERE u.onboarding_completed_at IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id)""",
+        "plans_without_onboarded_user": """SELECT count(*) FROM training_plans p
+            JOIN users u ON u.id=p.user_id WHERE u.onboarding_completed_at IS NULL""",
+        "plans_without_one_active_inclusion": """SELECT count(*) FROM training_plans p
+            WHERE (SELECT count(*) FROM program_inclusions i
+                   WHERE i.training_plan_id=p.id AND i.is_active) <> 1""",
+        "duplicate_legacy_copies": """SELECT count(*) FROM (SELECT 1 FROM training_sessions
+            WHERE legacy_id IS NOT NULL GROUP BY origin,legacy_id HAVING count(*)>1) d""",
+        "workouts_without_copy": """SELECT count(*) FROM workouts w WHERE w.status='completed'
+            AND NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_backfill'
+                AND s.legacy_id=w.id AND s.user_id=w.user_id AND s.status='completed')""",
+        "electives_without_copy": """SELECT count(*) FROM elective_workouts e
+            WHERE NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_elective'
+                AND s.legacy_id=e.id AND s.user_id=e.user_id AND s.status='completed')""",
+    }
+    for name, sql in checks.items():
+        count = int(await session.scalar(text(sql)))
+        if count:
+            errors.append(f"{name}={count}")
+    # Use the SAME historical reconciliation semantics as migration, without row locks.
+    # Calendar convergence is deliberately excluded: legitimate next-week work belongs
+    # to runtime, not to this no-schema release's preservation check.
+    user_ids = list((await session.execute(select(User.id).order_by(User.id))).scalars().all())
+    required_names = {EXERCISE_BLOCK_A_NAME, EXERCISE_BLOCK_B_NAME, *ELECTIVE_EXERCISE_NAMES.values()}
+    names = set((await session.execute(select(Exercise.name).where(Exercise.name.in_(required_names)))).scalars().all())
+    missing_names = sorted(required_names - names)
+    if missing_names:
+        errors.append("missing_legacy_catalog:" + ",".join(missing_names))
+    service = LegacyHistoryConvergenceService(session, read_only=True)
+    mutations = 0
+    unresolved = 0
+    for user_id in user_ids if not missing_names else []:
+        report = await service.converge_user(user_id, apply=False)
+        mutations += report.mutations
+        unresolved += len(report.ambiguous)
+        if report.counts["superseded_but_alive"]:
+            errors.append(f"superseded_live_copy:user_id={user_id}")
+    if mutations:
+        errors.append(f"history_mutations={mutations}")
+    if unresolved:
+        errors.append(f"unresolved_history={unresolved}")
+    result = {
+        "mode": "verify-only", "verified": not errors, "users_onboarded": onboarded,
+        "history_mutations": mutations, "unresolved": unresolved, "errors": errors,
+    }
+    await session.rollback()
+    return result
+
+
+async def verify_compatible_database(session: AsyncSession) -> dict:
+    """Read-only same-schema runtime check, not certification of initial migration.
+
+    Onboarding does not create a plan, and a runtime plan may have zero or many
+    courses. Cold archives and proved completed unplanned journal facts do not
+    require a plan. Current legacy progress, active or unclassified sessions do.
+    Never infer safety from onboarding, archive presence or a profile alone.
+    """
+    if session.in_transaction():
+        raise ValueError("verify-compatible requires a fresh session")
+    try:
+        await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        # The installed guard consumes these exact reviewed bytes without executing
+        # candidate Python. This query returns bounded aggregates only, never rows.
+        await session.execute(text("SET LOCAL statement_timeout = '5s'"))
+        await session.execute(text("SET LOCAL lock_timeout = '1s'"))
+        await session.execute(text("SET LOCAL idle_in_transaction_session_timeout = '5s'"))
+        classification = (
+            Path(__file__).with_name("sql").joinpath("planless_classification.sql").read_text()
+        )
+        row = (await session.execute(text(classification))).mappings().one()
+        count_keys = (
+            "users_total",
+            "users_onboarded",
+            "onboarded_with_plan",
+            "compatible_onboarded_without_plan",
+            "non_onboarded_with_plan",
+            "compatible_non_onboarded_without_plan",
+            "blocked_without_plan",
+            "training_plans_total",
+        )
+        counts = {key: int(row[key]) for key in count_keys}
+        errors: list[str] = []
+        if counts["blocked_without_plan"]:
+            errors.append(f"history_without_plan={counts['blocked_without_plan']}")
+        checks = {
+            "plan_item_reference_mismatch": """SELECT count(*) FROM plan_items i
+                LEFT JOIN program_inclusions c ON c.id=i.program_inclusion_id
+                LEFT JOIN plan_weeks w ON w.id=i.plan_week_id
+                LEFT JOIN plan_weeks o ON o.id=i.origin_plan_week_id
+                LEFT JOIN custom_plans p ON p.id=i.custom_plan_id
+                WHERE (i.program_inclusion_id IS NOT NULL AND c.training_plan_id IS DISTINCT FROM i.training_plan_id)
+                   OR (i.plan_week_id IS NOT NULL AND w.training_plan_id IS DISTINCT FROM i.training_plan_id)
+                   OR (i.origin_plan_week_id IS NOT NULL AND o.training_plan_id IS DISTINCT FROM i.training_plan_id)
+                   OR (i.custom_plan_id IS NOT NULL AND p.training_plan_id IS DISTINCT FROM i.training_plan_id)""",
+            "custom_plan_owner_mismatch": """SELECT count(*) FROM custom_plans c
+                LEFT JOIN training_plans p ON p.id=c.training_plan_id WHERE c.user_id IS DISTINCT FROM p.user_id""",
+            "session_reference_owner_mismatch": """SELECT count(*) FROM training_sessions s
+                LEFT JOIN program_inclusions c ON c.id=s.program_inclusion_id
+                LEFT JOIN training_plans cp ON cp.id=c.training_plan_id
+                LEFT JOIN plan_items i ON i.id=s.plan_item_id
+                LEFT JOIN training_plans ip ON ip.id=i.training_plan_id
+                WHERE (s.program_inclusion_id IS NOT NULL AND cp.user_id IS DISTINCT FROM s.user_id)
+                   OR (s.plan_item_id IS NOT NULL AND ip.user_id IS DISTINCT FROM s.user_id)""",
+            "session_plan_item_owner_mismatch": """SELECT count(*) FROM session_plan_items l
+                JOIN training_sessions s ON s.id=l.session_id JOIN plan_items i ON i.id=l.plan_item_id
+                JOIN training_plans p ON p.id=i.training_plan_id WHERE p.user_id IS DISTINCT FROM s.user_id""",
+            "duplicate_legacy_copies": """SELECT count(*) FROM (SELECT 1 FROM training_sessions
+                WHERE legacy_id IS NOT NULL GROUP BY origin,legacy_id HAVING count(*)>1) d""",
+            "workouts_without_copy": """SELECT count(*) FROM workouts w WHERE w.status='completed'
+                AND NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_backfill'
+                    AND s.legacy_id=w.id AND s.user_id=w.user_id AND s.status='completed')""",
+            "electives_without_copy": """SELECT count(*) FROM elective_workouts e
+                WHERE NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_elective'
+                    AND s.legacy_id=e.id AND s.user_id=e.user_id AND s.status='completed')""",
+        }
+        for name, sql in checks.items():
+            count = int(await session.scalar(text(sql)))
+            if count:
+                errors.append(f"{name}={count}")
+        # Keep the exact all-user history planner used by strict migration verification.
+        # No seed, calendar materialization, repair, row lock, or apply is permitted.
+        required_names = {EXERCISE_BLOCK_A_NAME, EXERCISE_BLOCK_B_NAME, *ELECTIVE_EXERCISE_NAMES.values()}
+        names = set((await session.execute(select(Exercise.name).where(Exercise.name.in_(required_names)))).scalars())
+        missing_names = sorted(required_names - names)
+        if missing_names:
+            errors.append("missing_legacy_catalog:" + ",".join(missing_names))
+        user_ids = list((await session.execute(select(User.id).order_by(User.id))).scalars())
+        service = LegacyHistoryConvergenceService(session, read_only=True)
+        mutations = unresolved = 0
+        for user_id in user_ids if not missing_names else []:
+            report = await service.converge_user(user_id, apply=False)
+            mutations += report.mutations
+            unresolved += len(report.ambiguous)
+            if report.counts["superseded_but_alive"]:
+                errors.append(f"superseded_live_copy:user_id={user_id}")
+        if mutations:
+            errors.append(f"history_mutations={mutations}")
+        if unresolved:
+            errors.append(f"unresolved_history={unresolved}")
+        return {
+            "mode": "verify-compatible", "verified": not errors, "counts": counts,
+            "history_mutations": mutations, "unresolved": unresolved, "errors": errors,
+        }
+    finally:
+        await session.rollback()
+
+
 def _parse_user_ids(value: str) -> list[int]:
     try:
         ids = sorted({int(part) for part in value.split(",")})
@@ -841,6 +1005,8 @@ def _parse_user_ids(value: str) -> list[int]:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--verify-only", action="store_true", help="verify fully migrated DB in a read-only transaction")
+    parser.add_argument("--verify-compatible", action="store_true", help="verify supported same-schema runtime states read-only")
     parser.add_argument("--dry-run", action="store_true", help="только посчитать, ничего не писать")
     parser.add_argument(
         "--truncate", action="store_true",
@@ -866,6 +1032,17 @@ async def main() -> None:
         ),
     )
     args = parser.parse_args()
+    if args.verify_only or args.verify_compatible:
+        mode = "--verify-compatible" if args.verify_compatible else "--verify-only"
+        if (args.verify_only and args.verify_compatible) or args.dry_run or args.truncate or args.converge_history or args.apply or args.user_ids is not None:
+            raise SystemExit(f"{mode} cannot be combined with other modes")
+        async with async_session_factory() as session:
+            verify = verify_compatible_database if args.verify_compatible else verify_migrated_database
+            result = await verify(session)
+            print("RESULT-JSON " + json.dumps(result, sort_keys=True))
+            if not result["verified"]:
+                raise SystemExit(1)
+        return
     if args.dry_run and args.truncate:
         raise SystemExit("--dry-run и --truncate несовместимы")
     if args.converge_history and (args.truncate or args.dry_run):

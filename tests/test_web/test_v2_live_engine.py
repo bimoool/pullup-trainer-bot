@@ -574,3 +574,24 @@ async def test_rebuild_matches_after_a_full_mixed_session(session, clock):
     await _assert_rebuild(session, sid)
     detail = await TrainingSessionRepository(session).get_for_user(sid, user.id)
     assert detail.status.value == "completed" and detail.blocks[1].result["completed_cycles"] == 3
+
+
+@pytest.mark.parametrize("custom,expected", [(False, (240, 180, 900)), (True, (300, 210, 600))])
+async def test_legacy_step_new_start_preserves_rest_preferences(session, clock, custom, expected):
+    """Production regression: do not apply generic 90s to the legacy course."""
+    user = await _user(session, 306091)
+    if custom:
+        user.rest_seconds_block_a, user.rest_seconds_block_b, user.big_break_seconds = expected
+        await session.flush()
+    _, _, items = await _setup_step_session(session, user)
+    body = await _start(session, user, clock, plan_item_ids=[items['block_a'], items['block_b']])
+    blocks = body['engine']['plan']['blocks']
+    assert blocks[0]['sets'][0]['rest_after_seconds'] == expected[0]
+    assert blocks[1]['sets'][0]['rest_after_seconds'] == expected[1]
+    assert blocks[0]['rest_after_block_seconds'] == expected[2]
+    detail = await TrainingSessionRepository(session).get_for_user(body['id'], user.id)
+    assert detail.prescription_snapshot['blocks'][0]['sets'][0]['rest_after_seconds'] == expected[0]
+    user.rest_seconds_block_a = 120
+    await session.flush()
+    reopened = await _active(session, user)
+    assert reopened['engine']['plan']['blocks'][0]['sets'][0]['rest_after_seconds'] == expected[0]

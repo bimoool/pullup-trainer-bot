@@ -3,6 +3,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from app.db.models import User
@@ -23,8 +24,11 @@ from app.domain.multi_program import (
     plan_week_number,
     plan_week_start_date,
 )
+from app.web import routes_v2
 from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
+
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 TG = 1001
 
@@ -39,11 +43,12 @@ def test_plannable_window_pure():
 async def _setup(session, user: User):
     exercise = Exercise(name="Планка", metric_type=MetricType.TIME, category="core", source_type="system")
     session.add(exercise)
-    plan = TrainingPlan(user_id=user.id, created_at=datetime.now(UTC) - timedelta(days=14))
+    today = routes_v2._plan_today(user)
+    origin = datetime.combine(today - timedelta(days=14), datetime.min.time(), UTC)
+    plan = TrainingPlan(user_id=user.id, created_at=origin)
     session.add(plan)
     await session.flush()
     created = plan.created_at.date()
-    today = datetime.now(UTC).date()
     number = plan_week_number(created, today)
     weeks = {}
     for n in (number - 1, number):

@@ -2,6 +2,7 @@
 Тот же паттерн, что tests/test_web/test_v2_exercises.py уже использует для
 аналогичного C1-фичи (v2_get/v2_post/v2_patch + user-фикстура из conftest.py)."""
 
+import pytest
 from sqlalchemy import select
 
 from app.db.models import User
@@ -9,6 +10,7 @@ from app.db.models_program import Complex
 from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
 
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 async def _create_second_user(session, telegram_id: int) -> User:
     return await create_premium_user(session, telegram_id=telegram_id, username="second_user")
@@ -145,10 +147,9 @@ async def test_add_plan_item_with_complex_id_only_resolves_exercise_id(session, 
     """Core regression — POST /plan-items {complex_id, без exercise_id}
     больше не падает 500, backend резолвит exercise_id из первого
     ComplexItem выбранного Workout."""
-    from datetime import UTC, datetime
 
     from app.db.models_program import Complex, ComplexItem, Exercise, PlanWeek, TrainingPlan
-    from app.domain.multi_program import MetricType
+    from app.domain.multi_program import MetricType, plan_week_start_date
 
     exercise = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="pull", source_type="system")
     session.add(exercise)
@@ -164,7 +165,7 @@ async def test_add_plan_item_with_complex_id_only_resolves_exercise_id(session, 
     plan = TrainingPlan(user_id=user.id)
     session.add(plan)
     await session.flush()
-    week = PlanWeek(training_plan_id=plan.id, week_number=1, start_date=datetime.now(UTC).date(), phase="base")
+    week = PlanWeek(training_plan_id=plan.id, week_number=1, start_date=plan_week_start_date(plan.created_at.date(), 1), phase="base")
     session.add(week)
     await session.flush()
     await session.commit()

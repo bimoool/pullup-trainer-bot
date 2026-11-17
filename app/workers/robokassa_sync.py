@@ -10,6 +10,7 @@ from app.config import settings
 from app.db.base import async_session_factory
 from app.db.models import PendingPayment
 from app.db.repositories.users import UserRepository
+from app.diagnostics import safe_exception_trace
 from app.services.robokassa import RobokassaClient, RobokassaService
 
 logger = logging.getLogger(__name__)
@@ -41,8 +42,8 @@ async def sync_robokassa_payments(bot: Bot) -> None:
                 return
             try:
                 await bot.send_message(user.telegram_id, texts.CARD_PAYMENT_CONFIRMED)
-            except TelegramAPIError:
-                logger.warning("robokassa_sync: failed to notify user %s", user.telegram_id, exc_info=True)
+            except TelegramAPIError as exception:
+                logger.warning("robokassa_sync: failed to notify user %s; %s", user.telegram_id, safe_exception_trace(exception))
             else:
                 # Раньше лога успеха не было вовсе — при диагностике первого
                 # живого платежа доставку пришлось подтверждать вручную,

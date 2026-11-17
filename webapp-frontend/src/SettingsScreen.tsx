@@ -22,7 +22,7 @@ import { downloadHistoryCsv } from "./exportAction";
 import { OFERTA_URL, openExternalLink } from "./SubscriptionScreen";
 import { THEME_LABEL } from "./theme";
 import { isVibrationEnabled, setVibrationEnabled } from "./vibration";
-import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
+import { convertWeightText, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
 import { useBackButton } from "./useBackButton";
 import { sanitizeDecimalInput } from "./decimalInput";
@@ -102,8 +102,6 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
   // Поля ввода — в выбранных черновых единицах, в метрику переводятся при сохранении.
   const [weightText, setWeightText] = useState(() =>
     convertWeightText(profile.weight_kg ?? "", "kg", saved.weight_unit));
-  const [heightText, setHeightText] = useState(() =>
-    convertHeightText(profile.height_cm !== null ? String(profile.height_cm) : "", "cm", saved.height_unit));
   const [gender, setGender] = useState<string>(profile.gender ?? "");
   const [birthDate, setBirthDate] = useState(profile.birth_date ?? "");
   const [timezone, setTimezone] = useState(profile.timezone ?? "");
@@ -144,7 +142,6 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
   }
 
   function switchHeightUnit(next: HeightUnit) {
-    setHeightText((text) => convertHeightText(text, heightUnit, next));
     setHeightUnit(next);
   }
 
@@ -157,15 +154,6 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
     }
     if (weight.value !== null) {
       body.weight_kg = String(unitToKg(Number(weight.value), weightUnit));
-    }
-    const trimmedHeight = heightText.trim().replace(",", ".");
-    if (trimmedHeight !== "") {
-      const parsed = Number(trimmedHeight);
-      if (!Number.isFinite(parsed) || parsed <= 0) {
-        setError("Рост должен быть положительным числом.");
-        return;
-      }
-      body.height_cm = unitToCm(parsed, heightUnit);
     }
     if (gender !== "") {
       body.gender = gender as "male" | "female";
@@ -223,12 +211,6 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
           <input
             type="text" inputMode="decimal" aria-label="Вес" value={weightText}
             onChange={(e) => setWeightText(sanitizeDecimalInput(e.target.value))}
-          />
-        </Row>
-        <Row icon="height" label={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}>
-          <input
-            type="text" inputMode="decimal" aria-label="Рост" value={heightText}
-            onChange={(e) => setHeightText(sanitizeDecimalInput(e.target.value))}
           />
         </Row>
         <Row icon="person" label="Пол">

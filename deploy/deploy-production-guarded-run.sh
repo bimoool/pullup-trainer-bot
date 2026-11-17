@@ -126,6 +126,166 @@ mf() { [ -z "$MANIFEST" ] || printf '%s=%s\n' "$1" "$2" >> "$MANIFEST"; }   # ma
 envkey_set() { grep -qE "^$1=.+" "$PROD_DIR/.env"; }                          # значение НЕ печатается
 envkey_is() { grep -qxF "$1=$2" "$PROD_DIR/.env"; }
 
+# Host-only sanitizer: never execute candidate code or export private verifier text.
+# Historical evidence is bound to one failed before-stop run, never an admission result.
+safe_compatibility_diagnostic() {
+  python3 -I - "$1" "${2:-before-stop}" "${WORK:-}" 2>/dev/null <<'COMPAT_DIAGNOSTIC_PY' >&7 || echo 'COMPAT-DIAG {"status":"DIAG_UNAVAILABLE"}' >&7
+import json
+import os
+import re
+import stat
+import sys
+
+INCIDENT_SHA = "1dc9f00fa33788f370ef0ecd1b8f32e497e515a3"
+INCIDENT_STAMP = "20261115T184743Z"
+INCIDENT_MANIFEST = "/root/backups/prod-pre-1dc9f00-20261115T184743Z.manifest"
+INCIDENT_SUMMARY = "/root/backups/prod-guarded-1dc9f00-20261115T184743Z.FAILED.txt"
+LIMIT = 1024 * 1024
+MAX_COUNT = 1_000_000_000
+COUNT_KEYS = (
+    "users_onboarded", "onboarded_with_plan", "compatible_onboarded_without_plan",
+    "non_onboarded_with_plan", "training_plans_total", "blocked_without_plan",
+    "users_total", "compatible_non_onboarded_without_plan",
+)
+ERROR_KEYS = (
+    "history_without_plan", "plan_item_reference_mismatch", "custom_plan_owner_mismatch",
+    "session_reference_owner_mismatch", "session_plan_item_owner_mismatch",
+    "duplicate_legacy_copies", "workouts_without_copy", "electives_without_copy",
+    "history_mutations", "unresolved_history",
+)
+
+
+def private_read(path):
+    # Walk with dir fds so neither files nor any directory component can be symlinks.
+    parts = path.split("/")
+    if not path.startswith("/") or any(p in ("", ".", "..") for p in parts[1:]):
+        raise ValueError()
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for index, part in enumerate(parts[1:]):
+            final = index == len(parts) - 2
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            if not final:
+                flags |= os.O_DIRECTORY
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            st = os.fstat(fd)
+            # /tmp is the sole shared ancestor, never the private work directory.
+            shared_tmp = not final and parts[1:index + 2] == ["tmp"]
+            if st.st_uid != 0 or (st.st_mode & (0o077 if final else 0o022) and not shared_tmp):
+                raise ValueError()
+            if final:
+                if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size > LIMIT:
+                    raise ValueError()
+                data = os.read(fd, LIMIT + 1)
+                if len(data) > LIMIT:
+                    raise ValueError()
+                return data.decode("utf-8")
+    finally:
+        os.close(fd)
+
+
+def unique_pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError()
+        result[key] = value
+    return result
+
+
+def bounded_count(value):
+    if type(value) is not int or not 0 <= value <= MAX_COUNT:
+        raise ValueError()
+    return value
+
+
+def sanitize(text):
+    rows = [line[12:] for line in text.splitlines() if line.startswith("RESULT-JSON ")]
+    if not rows:
+        return {"status": "UNCLASSIFIED", "errors": {"EXECUTION_ERROR_UNKNOWN": 1}}
+    if len(rows) != 1:
+        raise ValueError()
+    result = json.loads(rows[0], object_pairs_hook=unique_pairs)
+    if type(result) is not dict or result.get("mode") != "verify-compatible" or result.get("verified") is not False:
+        raise ValueError()
+    counts = result.get("counts")
+    if type(counts) is not dict:
+        raise ValueError()
+    counts = {key: bounded_count(counts.get(key)) for key in COUNT_KEYS}
+    counts.update({key: bounded_count(result.get(key)) for key in ("history_mutations", "unresolved")})
+    errors = result.get("errors")
+    if type(errors) is not list or not errors or len(errors) > 10000:
+        raise ValueError()
+    safe = {}
+    for error in errors:
+        if type(error) is not str:
+            raise ValueError()
+        match = re.fullmatch("(" + "|".join(ERROR_KEYS) + r")=([0-9]{1,10})", error)
+        if match:
+            code, count = match.group(1).upper(), bounded_count(int(match.group(2)))
+        elif re.fullmatch(r"superseded_live_copy:user_id=[0-9]{1,20}", error):
+            code, count = "SUPERSEDED_LIVE_COPY", 1
+        elif error.startswith("missing_legacy_catalog:"):
+            code, count = "MISSING_LEGACY_CATALOG", 1
+        else:
+            return {"status": "UNCLASSIFIED", "errors": {"UNKNOWN_GUARD_ERROR": 1}}
+        safe[code] = bounded_count(safe.get(code, 0) + count)
+    return {"status": "VERIFIER_REPORTED_FAILURE", "counts": counts, "errors": safe}
+
+
+def historical_work():
+    manifest = private_read(INCIDENT_MANIFEST)
+    fields = unique_pairs(line.split("=", 1) for line in manifest.splitlines() if line and not line.startswith("#"))
+    run = fields.get("run_id", "")
+    if (not re.fullmatch("prod-1dc9f00-" + INCIDENT_STAMP + r"-[0-9]{1,10}", run)
+            or fields.get("target_sha") != INCIDENT_SHA or fields.get("mode") != "apply"
+            or fields.get("project") != "pullup-trainer-bot" or fields.get("dir") != "/root/pullup-trainer-bot"
+            or not re.fullmatch(r"2026-11-15T[0-9]{2}:[0-9]{2}:[0-9]{2}Z phase=2", fields.get("failed_at", ""))
+            or any(key in fields for key in (
+                "backup_prestop", "writers_stopped_at", "backup", "backup_at", "backup_sha256",
+                "migration_started_at", "migration_committed_at", "backfill_mode", "backfill_started_at",
+                "backfill_done_at", "start_at", "rehearsal_ok_at", "deploy_ok_at",
+            ))):
+        raise ValueError()
+    summary = private_read(INCIDENT_SUMMARY)
+    lines = summary.splitlines()
+    works = [line.removeprefix("work dir (logs) : ") for line in lines if line.startswith("work dir (logs) : ")]
+    if len(works) != 1 or not re.fullmatch(r"/tmp/prod-guarded\.[A-Za-z0-9]{6}", works[0]):
+        raise ValueError()
+    work = works[0]
+    if private_read(work + "/FAILED.txt") != summary:
+        raise ValueError()
+    required = (
+        f"ERROR: verify-compatible failed (before-stop); see {work}/verify_before-stop.err and .txt",
+        f"!! PRODUCTION GUARDED apply FAILED at phase 2 (checkout {INCIDENT_SHA} and build app, then web — BEFORE stopping anything (production keeps running)), exit 1",
+        f"mode            : apply   target sha: {INCIDENT_SHA}",
+        f"manifest        : {INCIDENT_MANIFEST}",
+    )
+    if any(lines.count(line) != 1 for line in required):
+        raise ValueError()
+    return work
+
+
+def diagnostic(kind, label, work):
+    scope = "HISTORICAL_FAILURE_NOT_RELEASE_ACCEPTANCE" if kind == "historical" else "CURRENT_FAILURE_NOT_RELEASE_ACCEPTANCE"
+    try:
+        if kind == "historical":
+            work, label = historical_work(), "before-stop"
+        elif kind != "current" or label not in ("before-stop", "stopped", "repeat", "final"):
+            raise ValueError()
+        output = sanitize(private_read(work + "/verify_" + label + ".txt"))
+    except Exception:
+        output = {"status": "DIAG_UNAVAILABLE"}
+    return {"scope": scope, **output}
+
+
+if __name__ == "__main__":
+    print("COMPAT-DIAG " + json.dumps(diagnostic(*sys.argv[1:]), sort_keys=True, separators=(",", ":")))
+COMPAT_DIAGNOSTIC_PY
+}
+
 rollback_hint() {
   [ -n "$MANIFEST" ] || return 0
   local run_id; run_id="$(sed -n 's/^run_id=//p' "$MANIFEST" 2>/dev/null | head -n1)"
@@ -138,6 +298,145 @@ rollback_hint() {
     echo "  $ROLLBACK_BIN R1 $MANIFEST check"
     echo "  $ROLLBACK_BIN R1 $MANIFEST apply ROLLBACK-R1-$run_id"
   fi
+}
+
+# Current overlapping source counts only: no verdict, row payload or candidate code.
+# Fixed literal SQL, explicit server-enforced read-only snapshot and bounded waits.
+safe_planless_source_diagnostic() {
+  local sql result
+  sql="$(cat <<'PLANLESS_SOURCE_SQL'
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL idle_in_transaction_session_timeout = '5s';
+WITH planless AS (
+  SELECT u.id FROM users u WHERE NOT EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id)
+), sources AS (
+  SELECT u.id,
+    EXISTS (SELECT 1 FROM workouts w WHERE w.user_id=u.id) AS workouts,
+    EXISTS (SELECT 1 FROM elective_workouts e WHERE e.user_id=u.id) AS electives,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id) AS sessions,
+    EXISTS (SELECT 1 FROM workouts_archive_v1 a WHERE a.user_id=u.id) AS archive_v1,
+    EXISTS (SELECT 1 FROM workouts_archive_admin_reset a WHERE a.user_id=u.id) AS archive_reset,
+    EXISTS (SELECT 1 FROM workout_sets s WHERE s.user_id=u.id AND s.workouts_completed>0) AS progress,
+    EXISTS (SELECT 1 FROM workout_sets_archive_v1 a WHERE a.user_id=u.id AND a.workouts_completed>0) AS progress_v1,
+    EXISTS (SELECT 1 FROM workout_sets_archive_admin_reset a WHERE a.user_id=u.id AND a.workouts_completed>0) AS progress_reset,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND s.origin='native' AND s.status='completed') AS native_completed,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND s.status='started') AS active,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND (s.program_inclusion_id IS NOT NULL
+      OR s.plan_item_id IS NOT NULL OR EXISTS (SELECT 1 FROM session_plan_items l WHERE l.session_id=s.id))) AS linked,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id
+      AND (s.origin IS NULL OR s.origin NOT IN ('native','legacy_backfill','legacy_elective'))) AS unknown_origin,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id
+      AND s.origin='legacy_backfill' AND s.superseded_at IS NOT NULL) AS superseded_legacy,
+    EXISTS (SELECT 1 FROM training_sessions s JOIN session_blocks b ON b.session_id=s.id
+      JOIN exercises e ON e.id=b.exercise_id WHERE s.user_id=u.id AND s.origin='native'
+      AND e.subcategory IN ('block_a','block_b')) AS native_step
+  FROM planless u
+)
+SELECT /*planless-source-aggregate*/ array_to_string(ARRAY[
+  CASE WHEN current_setting('transaction_read_only')='on' THEN 1 ELSE 0 END,
+  count(*), count(*) FILTER (WHERE workouts), count(*) FILTER (WHERE electives),
+  count(*) FILTER (WHERE sessions), count(*) FILTER (WHERE archive_v1), count(*) FILTER (WHERE archive_reset),
+  count(*) FILTER (WHERE progress), count(*) FILTER (WHERE progress_v1), count(*) FILTER (WHERE progress_reset),
+  count(*) FILTER (WHERE native_completed), count(*) FILTER (WHERE active), count(*) FILTER (WHERE linked),
+  count(*) FILTER (WHERE unknown_origin), count(*) FILTER (WHERE superseded_legacy), count(*) FILTER (WHERE native_step)
+], '|') FROM sources;
+ROLLBACK;
+PLANLESS_SOURCE_SQL
+)"
+  result="$(dbq "$sql" 2>/dev/null)" || { echo 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' >&7; return 0; }
+  printf '%s\n' "$result" | python3 -I -c '
+import json, re, sys
+keys = ("USERS_TOTAL", "WORKOUTS", "ELECTIVE_WORKOUTS", "TRAINING_SESSIONS", "WORKOUTS_ARCHIVE_V1",
+        "WORKOUTS_ARCHIVE_ADMIN_RESET", "WORKOUT_SETS", "WORKOUT_SETS_ARCHIVE_V1",
+        "WORKOUT_SETS_ARCHIVE_ADMIN_RESET", "NATIVE_COMPLETED_SESSIONS", "ACTIVE_SESSIONS",
+        "LINKED_SESSIONS", "UNKNOWN_SESSION_ORIGINS", "SUPERSEDED_LEGACY_SESSIONS", "NATIVE_STEP_SESSIONS")
+try:
+    raw = sys.stdin.read(4097)
+    rows = [line for line in raw.splitlines() if line not in ("BEGIN", "SET", "ROLLBACK")]
+    if len(raw) > 4096 or len(rows) != 1 or not re.fullmatch(r"1(?:\|[0-9]{1,10}){15}", rows[0]):
+        raise ValueError()
+    values = list(map(int, rows[0].split("|")[1:]))
+    if any(value > 1_000_000_000 for value in values) or any(value > values[0] for value in values[1:]):
+        raise ValueError()
+    result = {"scope":"CURRENT_SOURCES_NOT_RELEASE_ACCEPTANCE", "status":"SOURCE_COUNTS", "counts":dict(zip(keys, values))}
+except Exception:
+    result = {"status":"DIAG_UNAVAILABLE"}
+print("PLANLESS-SOURCES " + json.dumps(result, sort_keys=True, separators=(",", ":")))
+' 2>/dev/null >&7 || echo 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' >&7
+}
+
+
+# Necessary planless condition only; the full candidate verifier still runs before
+# and after STOP, together with all existing preservation/ownership/hash guards.
+require_candidate_planless_zero() {
+  local entry size classification sql result
+  entry="$(git ls-tree "$SHA" -- scripts/sql/planless_classification.sql 2>/dev/null)" || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  [[ "$entry" =~ ^100644[[:space:]]blob[[:space:]][0-9a-f]{40}[[:space:]]scripts/sql/planless_classification\.sql$ ]] || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  size="$(git cat-file -s "$SHA:scripts/sql/planless_classification.sql" 2>/dev/null)" || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  [[ "$size" =~ ^[0-9]{1,5}$ ]] && [ "$size" -gt 0 ] && [ "$size" -le 32768 ] || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  classification="$(git show "$SHA:scripts/sql/planless_classification.sql" 2>/dev/null | python3 -I -c '
+import hashlib, sys
+raw = sys.stdin.buffer.read(32769)
+if len(raw) > 32768 or hashlib.sha256(raw).hexdigest() != "17c2e0370136bb884c49ca7f39fafe07dfc57031db75e175fad39e660d70e35c":
+    raise SystemExit(1)
+sys.stdout.write(raw.decode("ascii"))
+' 2>/dev/null)" || { echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1; }
+  sql="BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL idle_in_transaction_session_timeout = '5s';
+SELECT /*planless-candidate-host*/ CASE WHEN current_setting('transaction_read_only')='on' THEN '1' ELSE '0' END
+|| '|' || array_to_string(ARRAY[q.users_total, q.users_onboarded, q.onboarded_with_plan,
+q.compatible_onboarded_without_plan, q.non_onboarded_with_plan, q.compatible_non_onboarded_without_plan,
+q.blocked_without_plan, q.training_plans_total, q.current_legacy, q.active_or_incomplete,
+q.linked, q.superseded, q.unknown_origin, q.unsupported_source, q.block_ownership_or_step,
+q.definition_or_snapshot, q.engine_not_terminal, q.legacy_unproved, q.native_manual_saved,
+q.native_direct_v1, q.native_direct_v2, q.native_with_definition, q.native_with_version], '|')
+FROM ($classification) q;
+ROLLBACK;"
+  result="$(dbq "$sql" 2>/dev/null)" || { echo 'PLANLESS-CANDIDATE {"status":"DIAG_UNAVAILABLE"}' >&7; return 1; }
+  printf '%s\n' "$result" | python3 -I -c '
+import json, re, sys
+keys = ("USERS_TOTAL", "USERS_ONBOARDED", "ONBOARDED_WITH_PLAN", "COMPATIBLE_ONBOARDED_WITHOUT_PLAN",
+        "NON_ONBOARDED_WITH_PLAN", "COMPATIBLE_NON_ONBOARDED_WITHOUT_PLAN", "PLANLESS_BLOCKED",
+        "TRAINING_PLANS_TOTAL", "CURRENT_LEGACY", "ACTIVE_OR_INCOMPLETE", "LINKED", "SUPERSEDED",
+        "UNKNOWN_ORIGIN", "UNSUPPORTED_SOURCE", "BLOCK_OWNERSHIP_OR_STEP", "DEFINITION_OR_SNAPSHOT",
+        "ENGINE_NOT_TERMINAL", "LEGACY_UNPROVED", "NATIVE_MANUAL_SAVED", "NATIVE_DIRECT_V1",
+        "NATIVE_DIRECT_V2", "NATIVE_WITH_DEFINITION", "NATIVE_WITH_VERSION")
+try:
+    raw = sys.stdin.read(4097)
+    rows = [line for line in raw.splitlines() if line not in ("BEGIN", "SET", "ROLLBACK")]
+    if len(raw) > 4096 or len(rows) != 1 or not re.fullmatch(r"1(?:\|[0-9]{1,10}){23}", rows[0]):
+        raise ValueError()
+    values = list(map(int, rows[0].split("|")[1:]))
+    if any(value > 1_000_000_000 for value in values) or any(value > values[0] for value in values[1:]):
+        raise ValueError()
+    total, onboarded, planned, empty, other, other_empty, blocked, plans = values[:8]
+    if planned + empty > onboarded or other + other_empty > total - onboarded:
+        raise ValueError()
+    if total != planned + empty + other + other_empty + blocked or plans != planned + other:
+        raise ValueError()
+    if max(values[8:18]) > blocked or sum(values[8:18]) < blocked:
+        raise ValueError()
+    if max(values[18:]) > total - plans:
+        raise ValueError()
+    result = {"status":"PLANLESS_BLOCKED" if blocked else "PLANLESS_CANDIDATE_ZERO", "counts":dict(zip(keys, values))}
+except Exception:
+    print("PLANLESS-CANDIDATE " + json.dumps({"status":"DIAG_UNAVAILABLE"}, separators=(",", ":")))
+    raise SystemExit(1)
+print("PLANLESS-CANDIDATE " + json.dumps(result, sort_keys=True, separators=(",", ":")))
+raise SystemExit(1 if blocked else 0)
+' 2>/dev/null >&7
 }
 
 summary() {
@@ -314,7 +613,13 @@ leftover="$(docker ps -aq --filter "label=guarded.run" 2>/dev/null || true)"
 if pgrep -f 'deploy-run\.sh' >/dev/null 2>&1; then die "the plain production deploy (deploy-run.sh) is running"; fi
 if pgrep -f 'deploy-staging(-guarded)?-run\.sh' >/dev/null 2>&1; then die "a staging deploy is running (shared 1 GB VPS)"; fi
 
+if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
+  require_candidate_planless_zero || die "candidate planless compatibility is blocked or unavailable (before build/stop)"
+fi
+
 if [ "$MODE" = "preflight" ]; then
+  safe_compatibility_diagnostic historical
+  safe_planless_source_diagnostic
   log "PREFLIGHT OK (read-only): nothing was fetched, stopped, built, migrated, tagged or written; target $SHA, prod HEAD $PREV_SHA, alembic $PREV_REV"
   exit 0
 fi
@@ -371,6 +676,46 @@ for svc in app web; do
   log "built $svc: $name ${id:0:19}"
 done
 log "build took $((SECONDS - t0))s"
+
+# Same-head deployments must not apply migration work. Verify the
+# runtime and historical contract using the candidate BEFORE downtime; this does not
+# materialize the calendar. Unsafe history refuses release rather than selecting a repair.
+VERIFY_EXISTING=0
+verify_existing() {
+  local label="$1"
+  dcrun app python scripts/backfill_multi_program.py --verify-compatible > "$WORK/verify_$label.txt" 2> "$WORK/verify_$label.err" || { safe_compatibility_diagnostic current "$label"; die "verify-compatible failed ($label); see $WORK/verify_$label.err and .txt"; }
+  dcrun app python -c '
+import json, sys
+rows = [line.removeprefix("RESULT-JSON ") for line in sys.stdin if line.startswith("RESULT-JSON ")]
+if len(rows) != 1:
+    raise SystemExit("expected exactly one verify-compatible result")
+d = json.loads(rows[0])
+if d.get("mode") != "verify-compatible" or d.get("verified") is not True or d.get("errors") != []:
+    raise SystemExit("verify-compatible did not verify runtime compatibility")
+keys = ("users_onboarded", "onboarded_with_plan", "compatible_onboarded_without_plan",
+        "non_onboarded_with_plan", "training_plans_total", "blocked_without_plan",
+        "users_total", "compatible_non_onboarded_without_plan")
+c = d.get("counts")
+if not isinstance(c, dict) or any(type(c.get(k)) is not int or c[k] < 0 for k in keys):
+    raise SystemExit("invalid compatibility counts")
+for key in ("history_mutations", "unresolved"):
+    if type(d.get(key)) is not int or d[key] != 0:
+        raise SystemExit("history verification was not clean")
+n, a, e, p, t, b, u, z = (c[k] for k in keys)
+if b != 0 or n != a+e or t != a+p or u != n+p+z:
+    raise SystemExit("inconsistent compatibility classification")
+print(" ".join(str(c[k]) for k in keys))
+' < "$WORK/verify_$label.txt" > "$WORK/verify_counts_$label.txt" || { safe_compatibility_diagnostic current "$label"; die "invalid verify-compatible machine result ($label)"; }
+  if [ "$label" != "before-stop" ]; then
+    cmp -s "$WORK/verify_counts_before-stop.txt" "$WORK/verify_counts_$label.txt" || die "same-head runtime classification changed ($label); refusing mutating backfill"
+  fi
+}
+if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
+  verify_existing before-stop
+  read -r COMPAT_ONB COMPAT_WITH_PLAN COMPAT_EMPTY COMPAT_OTHER_PLAN COMPAT_PLANS COMPAT_BLOCKED COMPAT_USERS COMPAT_OTHER_EMPTY < "$WORK/verify_counts_before-stop.txt"
+  VERIFY_EXISTING=1
+  log "existing runtime compatibility verified read-only before stopping writers"
+fi
 
 # ------------------------------------------------------------------------------------------------ backup helper
 COUNTS_SQL="select /*q:legacy-counts*/ (select count(*) from users)||'/'||(select count(*) from workouts)||'/'||(select count(*) from elective_workouts)||'/'||(select count(*) from subscriptions)"
@@ -485,6 +830,21 @@ hash_all dry-run
 cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_dry-run.txt" || die "backfill --dry-run wrote to the database"
 log "backfill dry-run: onboarded=$ONB will_migrate=$WILL already_migrated=$ALREADY (report $REPORT_DIR/1-dry-run.txt); database unchanged"
 sed 's/^/    /' "$WORK/backfill_dry.txt"
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  { [ "$ONB" = "$COMPAT_ONB" ] && [ "$WILL" = "$COMPAT_EMPTY" ] && [ "$ALREADY" = "$COMPAT_WITH_PLAN" ]; } || die "same-head runtime classification changed after pre-stop verification; refusing mutating backfill"
+  # Reverify under stopped writers: the pre-stop read cannot rule out later writes.
+  verify_existing stopped
+  cp "$WORK/verify_stopped.txt" "$REPORT_DIR/2-verify-compatible.txt"
+  hash_all apply1
+  cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_apply1.txt" || die "verify-compatible wrote to the database"
+  same_legacy after-backfill
+  verify_existing repeat
+  cp "$WORK/verify_repeat.txt" "$REPORT_DIR/3-verify-compatible-repeat.txt"
+  hash_all apply2
+  cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "verify-compatible repeat changed the database"
+  mf backfill_mode verify-compatible
+  log "runtime-compatible database verified without applying backfill/calendar convergence"
+else
 BACKFILL_STARTED=1; mf backfill_started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 t0=$SECONDS
 backfill > "$WORK/backfill_a1.txt" 2> "$WORK/backfill_a1.err" || die "backfill (apply) failed (see $WORK/backfill_a1.err); committed users stay migrated — R3 or re-run"
@@ -503,14 +863,25 @@ cp "$WORK/backfill_a2.txt" "$REPORT_DIR/3-reapply.txt"
 hash_all apply2
 cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "backfill re-run changed the database (not idempotent)"
 mf backfill_done_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
 # контрольный dry-run после apply: все онбордившиеся уже смигрированы, мигрировать нечего, БД не меняется
 backfill --dry-run > "$WORK/backfill_dry2.txt" 2> "$WORK/backfill_dry2.err" || die "post-apply backfill --dry-run failed (see $WORK/backfill_dry2.err; needs 628144f)"
 cp "$WORK/backfill_dry2.txt" "$REPORT_DIR/3b-post-apply-dry-run.txt"
-[ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "0" ] || die "post-apply dry-run would still migrate users"
-[ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$ONB" ] || die "post-apply dry-run does not see all $ONB onboarded users as migrated"
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  { [ "$(num "$WORK/backfill_dry2.txt" 'Онбордившихся пользователей')" = "$COMPAT_ONB" ] &&
+    [ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "$COMPAT_EMPTY" ] &&
+    [ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$COMPAT_WITH_PLAN" ]; } || die "post-verification dry-run classification changed"
+else
+  [ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "0" ] || die "post-apply dry-run would still migrate users"
+  [ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$ONB" ] || die "post-apply dry-run does not see all $ONB onboarded users as migrated"
+fi
 hash_all dry-run2
 cmp -s "$WORK/hq_all_apply2.txt" "$WORK/hq_all_dry-run2.txt" || die "post-apply backfill --dry-run wrote to the database"
-log "backfill idempotent: re-run migrated 0, skipped $ONB; post-apply dry-run: will migrate 0; database unchanged"
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  log "runtime-compatible database unchanged: dry-run proposes $COMPAT_EMPTY planless-user plans; none applied"
+else
+  log "backfill idempotent: re-run migrated 0, skipped $ONB; post-apply dry-run: will migrate 0; database unchanged"
+fi
 # Контроль сведения (только чтение): история — 0 изменений; план — 0 нарушений guard'ов (мутации сделает рантайм на GET /plan)
 backfill --converge-history > "$WORK/converge_dry.txt" 2> "$WORK/converge_dry.err" || die "converge-history dry-run failed"
 cp "$WORK/converge_dry.txt" "$REPORT_DIR/4-converge-history-dry-run.txt"
@@ -541,11 +912,19 @@ inv() { # <name> <sql returning 0 when OK>
   [ "$v" = "0" ] || die "invariant $1 violated ($v)"
   log "invariant $1: OK"
 }
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  verify_existing final
+  cp "$WORK/verify_final.txt" "$REPORT_DIR/6-verify-compatible-final.txt"
+  hash_all final
+  cmp -s "$WORK/hq_all_control.txt" "$WORK/hq_all_final.txt" || die "final verify-compatible wrote to the database"
+  log "runtime compatibility invariants: verified; plans=$COMPAT_PLANS compatible_planless_onboarded=$COMPAT_EMPTY non_onboarded_plans=$COMPAT_OTHER_PLAN"
+else
 inv onboarded-without-plan "select /*inv:noplan*/ count(*) from users u where u.onboarding_completed_at is not null and not exists (select 1 from training_plans p where p.user_id = u.id)"
 inv plans-without-one-active-inclusion "select /*inv:inclusion*/ count(*) from training_plans p where (select count(*) from program_inclusions i where i.training_plan_id = p.id and i.is_active) <> 1"
 inv duplicate-legacy-copies "select /*inv:dups*/ count(*) from (select 1 from training_sessions where legacy_id is not null group by origin, legacy_id having count(*) > 1) d"
 [ "$(dbq "select /*inv:plans*/ count(*) from training_plans")" = "$ONB" ] || die "invariant plans == onboarded ($ONB) violated"
 log "invariant plans == onboarded ($ONB): OK"
+fi
 [ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head"
 log "training_sessions by origin: $(dbq "select /*q:origins*/ coalesce(string_agg(coalesce(origin,'null')||'='||n, ' ' order by origin), '') from (select origin, count(*) n from training_sessions group by origin) s")"
 
@@ -572,11 +951,20 @@ for svc in $SERVICES; do
   [ "$(docker inspect -f '{{.State.Restarting}}' "$cid")" = "false" ] || die "$svc is restarting"
   want="BUILT_ID_$svc"; got="$(docker inspect -f '{{.Image}}' "$cid")"
   [ "$got" = "${!want}" ] || die "$svc runs image ${got:0:19}, not the one built by this run (${!want:0:19})"
-  until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")" != "starting" ]; do
-    [ "$SECONDS" -lt "$deadline" ] || die "$svc healthcheck still 'starting' after ${HEALTH_TIMEOUT}s"; bgwait sleep 3
+  # A slow warm-up can exhaust Docker's retries before the HTTP probe succeeds.
+  # `unhealthy` is recoverable too; keep the same bounded startup deadline.
+  while :; do
+    [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = "true" ] || die "$svc stopped while waiting for health"
+    [ "$(docker inspect -f '{{.State.Restarting}}' "$cid")" = "false" ] || die "$svc is restarting"
+    st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
+    case "$st" in
+      healthy|none) break ;;
+      starting|unhealthy) ;;
+      *) die "$svc health status is '$st'" ;;
+    esac
+    [ "$SECONDS" -lt "$deadline" ] || die "$svc healthcheck still '$st' after ${HEALTH_TIMEOUT}s"
+    bgwait sleep 3
   done
-  st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
-  [ "$st" = "healthy" ] || [ "$st" = "none" ] || die "$svc health status is '$st'"
   log "running $svc: image ${got:0:19} == built by this run; health=$st"
 done
 [ "$(git rev-parse HEAD)" = "$SHA" ] || die "HEAD != $SHA after start"

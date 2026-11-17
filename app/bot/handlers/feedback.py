@@ -31,11 +31,11 @@ async def handle_report_problem_text(message: Message, state: FSMContext, sessio
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
     now = datetime.now(UTC)
-    who = f"@{message.from_user.username}" if message.from_user.username else f"id {message.from_user.id}"
+    who = f"пользователь #{user.id}"
 
     # Пишем событие даже если ни одно личное уведомление админу не
     # доставится (например, у бота нет диалога с админом) — так фидбек не
-    # теряется и виден в общей аналитике/Google Sheets.
+    # теряется и остаётся доступным в серверной истории обращений.
     await EventRepository(session).create(
         user_id=user.id,
         event_type="feedback_reported",
@@ -50,8 +50,9 @@ async def handle_report_problem_text(message: Message, state: FSMContext, sessio
             await message.bot.send_message(
                 admin_id, notification, parse_mode=None, reply_markup=feedback_admin_reply_keyboard(user.id),
             )
-        except TelegramAPIError:
-            logger.warning("feedback: failed to notify admin %s", admin_id, exc_info=True)
+        except TelegramAPIError as exception:
+            # Telegram error text can repeat the private support report.
+            logger.warning("feedback: failed to notify admin; %s", type(exception).__name__)
 
     await state.clear()
     await message.answer(texts.FEEDBACK_DONE)

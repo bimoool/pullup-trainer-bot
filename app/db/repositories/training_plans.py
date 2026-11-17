@@ -555,7 +555,7 @@ class TrainingPlanRepository:
     async def live_workout_ids(self, complex_ids: list[int], user_id: int) -> set[int]:
         """#304 F — тренировки из complex_ids, на которые ещё можно ссылаться планом пользователя:
         не архивные (удалённые) и видимые ему по жизненному циклу Builder — свой user Workout или
-        системная тренировка без владельца (те же правила, что ProgramRepository.get_visible_workout_for_user).
+        системная тренировка без владельца (те же правила, что ProgramRepository.get_publicly_attachable_workout_for_user).
         Читается запросом колонок, а не session.get: архивирование из другой транзакции видно после лока,
         даже если Complex уже лежит в identity map."""
         if not complex_ids:

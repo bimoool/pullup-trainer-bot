@@ -10,7 +10,7 @@ import {
 } from "./api";
 import { invalidateProfileTimeZone } from "./useProfileToday";
 import { useDisplayPrefs } from "./displayPrefs";
-import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
+import { convertWeightText, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
 import { useBackButton } from "./useBackButton";
 import { sanitizeDecimalInput } from "./decimalInput";
@@ -47,11 +47,8 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
   // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
   useBackButton(onBack, [onBack]);
   // Единицы (#268): поля показываются/вводятся в выбранных единицах, на сервер уходит метрика.
-  const { weight_unit: weightUnit, height_unit: heightUnit } = useDisplayPrefs();
+  const { weight_unit: weightUnit } = useDisplayPrefs();
   const [weightKg, setWeightKg] = useState(convertWeightText(profile.weight_kg ?? "", "kg", weightUnit));
-  const [heightCm, setHeightCm] = useState(
-    convertHeightText(profile.height_cm !== null ? String(profile.height_cm) : "", "cm", heightUnit),
-  );
   const [gender, setGender] = useState<string>(profile.gender ?? "");
   const [birthDate, setBirthDate] = useState(profile.birth_date ?? "");
   const [timezone, setTimezone] = useState(profile.timezone ?? "");
@@ -86,16 +83,6 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
     }
     if (weight.value !== null) {
       body.weight_kg = String(unitToKg(Number(weight.value), weightUnit));
-    }
-
-    const trimmedHeight = heightCm.trim();
-    if (trimmedHeight !== "") {
-      const parsedHeight = Number(trimmedHeight);
-      if (!Number.isFinite(parsedHeight) || parsedHeight <= 0) {
-        setError("Рост должен быть положительным числом.");
-        return;
-      }
-      body.height_cm = unitToCm(parsedHeight, heightUnit);
     }
 
     if (gender !== "") {
@@ -135,17 +122,6 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
           value={weightKg}
           onChange={(e) => {
             setWeightKg(sanitizeDecimalInput(e.target.value));
-            setJustSaved(false);
-          }}
-        />
-        <Input
-          header={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
-          type="text"
-          inputMode="decimal"
-          aria-label={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
-          value={heightCm}
-          onChange={(e) => {
-            setHeightCm(sanitizeDecimalInput(e.target.value));
             setJustSaved(false);
           }}
         />

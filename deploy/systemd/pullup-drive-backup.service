@@ -1,0 +1,27 @@
+[Unit]
+Description=Encrypted PostgreSQL backup directly from VPS to owner Google Drive
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/root/pullup-trainer-bot
+ExecStart=/usr/bin/python3 -I /root/bin/control-plane-backup.py
+UMask=0077
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# The runner has its own 1100s deadline. Container-side pg_dump timeout is 600s.
+# Give targeted DB cleanup time after TERM before killing local children.
+TimeoutStartSec=20min
+TimeoutStopSec=650s
+KillMode=control-group
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/root/backups /home/deploy/.deploy-staging.lock
+ReadOnlyPaths=/etc/pullup-drive-backup /root/bin /root/pullup-trainer-bot
+StandardOutput=null
+StandardError=null

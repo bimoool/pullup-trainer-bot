@@ -1,4 +1,5 @@
 name: Deploy Staging (guarded)
+run-name: Guarded staging ${{ inputs.sha }} ${{ inputs.converge }} ${{ inputs.start }}
 
 # НЕ ПУТЬ ВЫКАТА (решение владельца): выбран ручной SSH-вызов guarded dispatcher (docs/STAGING_RC_RUNBOOK.md §3.3).
 # workflow_dispatch доступен только для workflow из ветки по умолчанию; в main этот файл не переносится, поэтому вариант

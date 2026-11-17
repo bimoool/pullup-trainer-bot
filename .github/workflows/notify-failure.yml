@@ -7,7 +7,7 @@ name: Notify on failure
 
 on:
   workflow_run:
-    workflows: ["Tests", "E2E (Mini App)", "Deploy", "Deploy Staging", "Claude Code", "Orch Planner", "Orch Worker"]
+    workflows: ["Tests", "E2E (Mini App)", "Deploy", "Deploy Staging", "Claude Code", "Codex Native Review", "Codex task (bounded)", "Orch Planner", "Orch Worker"]
     types: [completed]
 
 permissions:

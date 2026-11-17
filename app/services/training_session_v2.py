@@ -19,6 +19,7 @@
 active_elapsed_ms=...); контракт — docs/domain/TRAINING_SESSION_V2.md §8.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -170,7 +171,7 @@ class TrainingSessionV2Service:
         started_at: datetime | None = None, timezone: str | None = None, duration: Duration | None = None,
         distance_meters: int | None = None, engine_version: int | None = None,
         origin: SessionOrigin = SessionOrigin.NATIVE, course_prescription: dict | None = None,
-        progression_state_rev: int = 0,
+        progression_state_rev: int = 0, snapshot_patch: Callable[[dict], dict] | None = None,
     ) -> SessionDetail:
         """Поля v2 сессии, созданной в этой же транзакции. duration=None — не трогать (живая сессия
         получает длительность при завершении). course_prescription — рецепт программы V5.6 основного
@@ -184,6 +185,8 @@ class TrainingSessionV2Service:
         )
         if course_prescription is not None and snapshot is not None:
             snapshot = course_snapshot_patch(snapshot, course_prescription, progression_state_rev=progression_state_rev)
+        if snapshot_patch is not None and snapshot is not None:
+            snapshot = snapshot_patch(snapshot)  # заморозка до записи: снимок пишется один раз (S1)
         await self._sessions.apply_v2_stamp(session_id, SessionV2Stamp(
             kind=kind.value, source_v2=source.value, origin=origin.value,
             workout_definition_id=workout_definition_id,
