@@ -21,13 +21,17 @@ class StagingAttestationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        self.root_uid = os.getuid()
+        self.deploy_uid = self.root_uid or 65534
         self.home = self.root / "home"
         self.deploy = self.home / "deploy"
         self.deploy.mkdir(parents=True)
+        self.set_deploy_owner(self.deploy)
         self.runner = self.deploy / "deploy-staging-guarded-run.sh"
         self.blob = b"#!/bin/sh\n# synthetic runner, never executed\nexit 0\n"
         self.runner.write_bytes(self.blob)
         self.runner.chmod(0o755)
+        self.set_deploy_owner(self.runner)
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.git("init", "--quiet")
@@ -43,6 +47,13 @@ class StagingAttestationTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "--quiet", "-m", "Synthetic candidate")
         self.sha = self.git("rev-parse", "HEAD").decode().strip()
+
+    def set_deploy_owner(self, path):
+        # Root fixtures must still model a separate, nonroot deploy account.
+        # Change ownership only within this test's temporary staging directory.
+        self.assertTrue(path == self.deploy or path.parent == self.deploy)
+        if self.root_uid == 0:
+            os.chown(path, self.deploy_uid, -1, follow_symlinks=False)
 
     def git(self, *args):
         return subprocess.run(
@@ -69,10 +80,10 @@ class StagingAttestationTests(unittest.TestCase):
             ),
             patch.object(t, "query", return_value="b5d8e1f3a6c9"),
             patch.object(t.os, "open", side_effect=open_fixed),
-            patch.object(t, "STAGING_ROOT_UID", os.getuid(), create=True),
+            patch.object(t, "STAGING_ROOT_UID", self.root_uid, create=True),
             patch(
                 "pwd.getpwnam",
-                return_value=SimpleNamespace(pw_uid=os.getuid(), pw_dir="/home/deploy"),
+                return_value=SimpleNamespace(pw_uid=self.deploy_uid, pw_dir="/home/deploy"),
             ),
         ):
             yield
@@ -150,17 +161,18 @@ class StagingAttestationTests(unittest.TestCase):
         self.assert_unknown_match("UNTRUSTED")
         self.runner.unlink()
         os.mkfifo(self.runner)
+        self.set_deploy_owner(self.runner)
         self.assert_unknown_match("UNTRUSTED")  # Must not block on the FIFO.
 
     def test_fixed_deploy_identity_must_be_known_nonroot_and_have_expected_home(self):
         for owner in [
             SimpleNamespace(pw_uid=0, pw_dir="/home/deploy"),
-            SimpleNamespace(pw_uid=os.getuid(), pw_dir="/tmp/untrusted"),
-            SimpleNamespace(pw_uid=os.getuid() + 1, pw_dir="/home/deploy"),
+            SimpleNamespace(pw_uid=self.deploy_uid, pw_dir="/tmp/untrusted"),
+            SimpleNamespace(pw_uid=self.deploy_uid + 1, pw_dir="/home/deploy"),
         ]:
             with (
                 patch("pwd.getpwnam", return_value=owner),
-                patch.object(t, "STAGING_ROOT_UID", os.getuid()),
+                patch.object(t, "STAGING_ROOT_UID", self.root_uid),
             ):
                 # This direct fixture uses the same real descriptors while
                 # changing only the expected identity, not filesystem metadata.
@@ -209,20 +221,24 @@ class StagingAttestationTests(unittest.TestCase):
                             replacement = self.deploy / "replacement"
                             replacement.write_bytes(self.blob)
                             replacement.chmod(0o755)
+                            self.set_deploy_owner(replacement)
                             replacement.replace(self.runner)
                         elif case == "unlink":
                             self.runner.unlink()
                         else:
                             self.deploy.rename(self.home / "old-deploy")
                             self.deploy.mkdir()
+                            self.set_deploy_owner(self.deploy)
                             self.runner.write_bytes(self.blob)
                             self.runner.chmod(0o755)
+                            self.set_deploy_owner(self.runner)
                     return result
 
                 with patch.object(t.os, "read", side_effect=read_and_change):
                     self.assert_unknown_match("UNKNOWN")
                 self.runner.write_bytes(self.blob)
                 self.runner.chmod(0o755)
+                self.set_deploy_owner(self.runner)
 
     def test_concurrent_growth_is_bounded_and_hash_is_discarded(self):
         original_read = os.read
