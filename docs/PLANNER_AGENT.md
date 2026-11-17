@@ -1,71 +1,73 @@
-# Planner Agent — selects exactly one next task
+# Planner Agent — current technical coordination
 
-The planner decides **what** runs next. It never writes product code. Its deterministic core is
-`scripts/orch.py plan` (unit-tested in `tests/test_orch.py`); a human or an interactive Claude
-session acting as planner follows the same rules and uses the same command to apply them.
+The coordinator selects bounded work within the owner's existing authorization,
+checks ownership and evidence, and arranges review/integration. A read-only planner
+does not silently become a source writer. The October `orch-planner.yml` /
+`scripts/orch.py` loop on `develop/current` is historical and must not be resumed.
+It does not supply the current task queue or a five-task owner-approval gate.
 
-Runs: `orch-planner.yml` (GitHub Actions, `workflow_dispatch` on `develop/current`) — dispatched by
-the owner, or automatically by the worker workflow after each finished task while a batch runs.
+## Brief gate (before issuing any brief)
+
+Use [AGENT_EXECUTION_MODEL](AGENT_EXECUTION_MODEL.md), **Navigator brief gate**:
+actual capability, continuing branch/session, verified base, authorized scope,
+bounded deliverable, acceptance, tests and next checkpoint. Do not create duplicate
+branches/PRs or ask the owner to relay instructions, open another chat or run
+commands for routine technical work. Explicit permissions persist within scope.
+
+New/unaccepted UX or reference proposals require the product decision described
+in **Reference audit to implementation gate** before implementation. An OBSERVED
+reference behavior is evidence, not product acceptance. Already accepted repairs
+and delegated technical integration do not need generic sprint reapproval.
 
 ## Inputs it reads (every run, fresh — never chat memory)
 
-1. Open issues + labels, recently closed issues (GitHub API).
-2. `.github/orch/state.json` on the canonical branch — batch counter, canonical branch/PR, phase.
-3. `.github/task/current.md` — the single active brief.
-4. Canonical PR CI state, last worker run, staging/production deploy runs (for the status page).
+1. Latest explicit owner scope, task acceptance criteria, and the
+   [safe #377 checkpoint](https://github.com/bimoool/pullup-trainer-bot/issues/377#issuecomment-6897382093).
+   Verify its narrative against current primary evidence; it may lag live work.
+2. Current `origin/main`, issue/PR state and exact heads/trees, worktree status,
+   unfinished/untracked work, live agents and explicit writer ownership.
+3. Required CI/security/native checks and root/independent reviews for the exact
+   final head; current Actions state and permitted operation receipts/claims.
+4. Constitution, accepted PROJECT_SPEC, implementation plan and relevant source.
+   Historical labels, `PROJECT_STATUS`, retired #230 and old orchestration state
+   are secondary context, never current authority or executor proof.
 
-## Algorithm (`plan()` in `scripts/orch.py`)
+## Selection and checkpoint algorithm
 
-1. **Invariants.** Any open issue with >1 `status:*` label, open+`status:done`, closed+ready/
-   in-progress, or more than one `status:in-progress` → **stop** (`invariant-violation`). The
-   owner (or an interactive session) fixes labels; the planner does not guess.
-2. **One worker at a time.** If an issue is already `status:in-progress` → `active-exists`:
-   no new selection, no second worker. (A duplicate planner run is therefore a no-op.)
-3. **Queue.** Open issues whose *only* status label is `status:ready`, excluding `orch:dashboard`
-   (and `orch:test` outside sandbox runs). Order: `priority:p0` → `p1` → `p2` → none; within a
-   priority `type:bug` first; then oldest issue number. Priority labels encode the rough policy
-   *P0 bugs → release blockers → P1 UX/product → roadmap → infra → enhancements*; when issue
-   context says otherwise, the owner/planner session changes the **labels**, not the code.
-4. **Readiness gate** (`check_ready()`) on the WHOLE queue: first passing candidate wins; every failing one is moved
-   to `status:needs-owner` with a comment giving the exact reason:
-   - author is in `trusted_authors` (state.json) or the issue has `orch:owner-approved`
-     (issue text becomes worker instructions — prompt-injection guard);
-   - sections `Goal`, `Acceptance criteria` (≥1 list item), `Tests`, `Owner decision required`
-     present (template: `.github/ISSUE_TEMPLATE/implementation.md`);
-   - `Owner decision required` answer is `no`;
-   - no **owner stop condition** in title/Goal/Acceptance criteria (below), unless the owner
-     added `orch:owner-approved`.
-5. **Batch gate.** Batch must be `running` with `completed < limit (5)` and
-   `attempts < max_attempts (8)`. Otherwise → `batch-stop`; if the limit was hit, state becomes
-   `owner-review` and the status page says **STOP — OWNER REVIEW REQUIRED**.
-6. **Apply** (`--apply`): label `status:in-progress` (removing `status:ready`), write
-   `.github/task/current.md`, comment on the issue, refresh `docs/PROJECT_STATUS.md` + dashboard
-   issue, commit `chore(orch): …` to the canonical branch and push. The workflow then dispatches
-   `orch-worker.yml` for that issue.
+1. Reconcile discrepancies and UNKNOWN outcomes before acting. A closed issue or
+   DONE label needs source/acceptance proof; a stale blocker needs fresh readback.
+   Never repeat an uncertain operation merely because a summary says failed.
+2. Select the highest-priority actionable task in the accepted scope. Inspect
+   existing branches/PRs and dependencies first. An active integration freeze
+   blocks competing publication/integration, not independent permitted preparation.
+3. Assign exactly one source writer. Read-only review may run on a pinned SHA.
+   At a transfer/preemption save a checkpoint, release ownership explicitly and
+   let the next writer verify it. Preserve others' worktrees and shared dependencies.
+4. Continue the same task branch in its own worktree; normal-merge fresh main,
+   without reset/rebase/force. Use the complete brief and bounded checkpoints.
+5. Verify relevant acceptance with honest checks, then publish when the active
+   freeze allows. Require current-head full CI, root and independent review before
+   delegated protected expected-SHA merge, then verify the resulting main tree.
+   Record skips/classification accurately; earlier success cannot admit a new head.
+6. Record exact SHA/tree, actual checks, unresolved blockers, writer ownership and
+   next work in a privacy-safe checkpoint. Continue authorized technical work
+   without a batch-count stop, repeated permission or owner command/manual-QA relay.
 
-Dry run (`plan` without `--apply`) prints the same decision and changes nothing.
+## Real scope and capability boundaries
 
-## Owner stop conditions → `status:needs-owner`, never invented
+An unresolved product/core-progression choice, or a conflict with the constitution
+or accepted product contract, needs that precise decision before dependent work.
+New reference proposals remain proposals until accepted. Report the conflict and
+complete unaffected work; do not invent a broad owner stop for technical choices.
 
-Ambiguous product decision · destructive migration · production deploy / main merge ·
-credentials/secrets · paid external service · irreversible data operation · security-policy
-decision · core progression semantics · deleting user/reference data · real-device manual
-validation. Keyword patterns: `OWNER_STOP_PATTERNS` in `scripts/orch.py` (RU+EN). They are a
-tripwire, not a judgement: an interactive planner session must still read the issue and move
-anything ambiguous to `status:needs-owner` itself.
+Production/recovery/rollback, migrations, deletion/data loss, new credentials,
+paid usage and messages to others require their own explicit scope and guarded
+admission. A delegated source merge does not authorize any of them. Do not bypass
+SSH/access guards, permission refusals or an existing pending consent request.
+Source readiness is not installation/runtime/device acceptance.
 
-## Planner MUST NOT
-
-Implement code · change product behaviour or specs · select `needs-owner`/`blocked` issues ·
-choose or run a production deploy · merge `main` · exceed the batch limit · start a batch
-(only the owner starts one) · trust `PROJECT_STATUS.md` over GitHub/repo (it is a view).
-
-## Interactive planner session (Claude Code, any computer)
-
-```bash
-git fetch && git switch develop/current && git pull
-python scripts/orch.py check          # invariants
-python scripts/orch.py plan           # dry run — read the decision and the rejected list
-# normalize issues by hand if needed: edit body to the template, set priority/type/status labels
-gh workflow run orch-planner.yml --ref develop/current -f command=plan -f apply=true -f dispatch_worker=true
-```
+Report a capability gap immediately, choose a bounded allowed alternative if it
+proves the requirement, and continue independent work. Keep mandatory acceptance
+UNKNOWN when evidence is unavailable; synthetic proof is not native/manual proof.
+Do not invent a daemon, new service, additional authority or continuous watcher.
+Keep real data, secrets, private identifiers and raw logs out of public records.

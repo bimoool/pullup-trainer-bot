@@ -1,5 +1,9 @@
 # Crimpd 8.5.x golden traces (secondhand reference) — Wave 1 / A-reference
 
+Follow-up: [direct Android observations, 2026-11-10](../../crimpd-20261110/REPORT.md).
+The historical tags below are not new-pass evidence. Use the follow-up for
+tested Save, background, review-dismissal, Edit/Clone and Schedule behavior.
+
 Umbrella: bimoool/pullup-trainer-bot#295. Read-only agent; no Crimpd access.
 
 ## 0. Evidence rules and honest limits
