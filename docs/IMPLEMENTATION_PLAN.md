@@ -1,5 +1,36 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Проверенная навигация по интеграциям — 2026-11-17
+
+Сводка сверена с `main` `fbce51b6d89a0ea36ab492852b251bc74f1248ba`
+и состояниями соответствующих PR/issues. Перед продолжением проверить свежие
+heads, checks/review и [безопасный checkpoint #377](https://github.com/bimoool/pullup-trainer-bot/issues/377#issuecomment-6897382093).
+Эта сводка описывает интеграцию исходников, а не текущие bytes или health сервера.
+
+| Работа | Проверенное состояние исходников | Что остаётся отдельно |
+|---|---|---|
+| #360, staging runner attestation | [PR424](https://github.com/bimoool/pullup-trainer-bot/pull/424) merged; итоговое дерево `d41e0af25d80388d20484ec366c9049f16b81176` совпало с проверенным кандидатом | Установка helper и фактическая installed staging-runner аттестация; #360 открыта |
+| #359, узкая 1RM-вёрстка | [PR419](https://github.com/bimoool/pullup-trainer-bot/pull/419) merged | Остальной feedback #359 и native Telegram/device acceptance не закрыты |
+| #353/#298, частичные ошибки Home | [PR419](https://github.com/bimoool/pullup-trainer-bot/pull/419) merged; обе issues закрыты | Не повторять source fix или его завершённые проверки |
+| #367, frontend toolchain | [PR390](https://github.com/bimoool/pullup-trainer-bot/pull/390) и [PR418](https://github.com/bimoool/pullup-trainer-bot/pull/418) merged; #367 закрыта | Не считать обновление dev-toolchain отдельным production deploy |
+| #313, docstring | [PR420](https://github.com/bimoool/pullup-trainer-bot/pull/420) merged | Вопрос политики past manual-history остаётся в #313; never-materialised weeks сохраняют документированный контракт |
+| #421, двойной тап «Готово» | [PR422](https://github.com/bimoool/pullup-trainer-bot/pull/422) merged; #421 закрыта | Source integration не означает выкладку этого исправления |
+| #405/#406, backup/controller | [PR408](https://github.com/bimoool/pullup-trainer-bot/pull/408) merged | Административный bootstrap, provisioning и runtime acceptance не выполнены; source не заменяет эти доказательства |
+| #295, Functional Audit Wave 1 | Документы присутствуют в main; выделенные #296–#300 и сама audit-задача закрыты | Исторические ограничения аудита сохраняются; полная текущая приёмка #309/#358 и оставшиеся предложения этим не закрыты |
+
+Наличие разрешённой независимой задачи проверять по свежему backlog и решениям,
+а не выводить отсутствие работы из завершённого release. Блокер административной
+установки или native UI не запрещает независимую облачную разработку. Новое
+изменение продукта, install/deploy/rollback и операции с данными допускаются только
+в их действующем scope; эта сверка не выдаёт новых разрешений.
+
+## Исторические checkpoints разработки
+
+Ниже сохранены датированные снимки кандидатов. Слова «pending», «candidate»,
+старые baseline SHA и описанные тогда следующие шаги отражают момент записи,
+а не текущую очередь. Сначала использовать сводку выше и свежие первичные факты;
+не повторять merge, prepare, adoption, deploy или тесты по старому checkpoint.
+
 ## Candidate staging runner attestation #360 — 2026-11-17
 
 Readiness adds a separate fixed-path staging installed/candidate hash fact because
