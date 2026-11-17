@@ -50,6 +50,11 @@ seed v5_weighted_b_live 930507
 seed v5_one_rep_max 930701
 # вход в тренировку с Главной (home-start-training.spec.ts): СВОЙ профиль — спек стартует сессию.
 seed plan_week_start_session 930801
+# Home partial upstream failures (#353/#298): read-only course and empty-plan fixtures.
+seed plan_week_start_session 939981
+seed plan_week_start_session 939982
+seed home_workouts 939971
+seed home_workouts 939972
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001

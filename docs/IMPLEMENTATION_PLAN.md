@@ -1,5 +1,33 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Candidate Home partial failures #353/#298 — 2026-11-17
+
+Continue from `main` f92654b with the reviewed PR #389 prerequisite 6915e3e.
+Home now keeps successfully loaded courses browsable while plan membership is
+loading/unavailable, blocks plan-dependent actions until a valid response, and
+offers a plan retry. A known empty plan retains its direct create fallback when
+the catalog fails. Real built React/API/PostgreSQL regressions reproduced three
+failures before the fix; the explicit empty-Plans catalog-error CTA already passed.
+Focused recovery/loading/stale-response/401 coverage is added with independent
+synthetic fixtures. Full CI, independent review and trusted-main integration remain
+pending; publish the final PR after the frozen PR #389 integration. No release,
+schema, progression or server operation belongs to this change.
+
+## Кандидат frontend toolchain #367 — 2026-11-17
+
+От актуального `main` `869cd0d`: Vite 6.4.6, Vitest 4.1.12 и адресное обновление
+`source-map-js` 1.2.2. Полный npm audit: 9 → 0; production-only: 0 → 0.
+Чистая установка, production build, 56 unit-файлов, 34 общих вектора,
+functional/staging typecheck и коллекция Playwright, staging 14 platform
+contracts проходят. Продукт, схема и production-зависимости не меняются.
+Подробности совместимости и первичные advisory —
+[ENGINEERING_NOTES.md](ENGINEERING_NOTES.md#frontend-toolchain-audit-367-2026-11-17-candidate).
+Docker web собирается с Node 20 и проверкой TLS. Ветка обычным merge включает
+prerequisite PR #390 (семь прежних ошибок functional E2E typecheck).
+До приёмки нужны merge #390, полный CI с реальным API/PostgreSQL
+на итоговом SHA и независимое ревью.
+Релиз и серверные операции в эту задачу не входят.
+
 ## Draft server-side Drive backup #405 — 2026-11-15
 
 Изолированный кандидат от `main` `226c505`: root-only утилита `deploy/drive-backup.py`,

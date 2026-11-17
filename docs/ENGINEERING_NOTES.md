@@ -1,5 +1,83 @@
 # Инженерные заметки pullup-trainer-bot
 
+## Home partial upstream failures #353/#298 (2026-11-17, candidate)
+
+`HomeScreen` previously used `Promise.all(fetchPrograms, fetchPlan)` and kept both
+results in one catalog state. A failed plan discarded successful program content;
+a failed catalog also discarded the known empty-plan state and its create CTA.
+Separate local loading/error/ready states preserve each successful read. Program
+Detail uses nullable membership: unknown membership disables Add until the plan
+loads, and plan errors expose a retry while retaining the API's human-readable
+authentication explanation. Both fetch effects ignore late results after cleanup.
+No backend, formula, schema, ownership, subscription or release behavior changes.
+
+`home-partial-failure.spec.ts` runs built React against real FastAPI/PostgreSQL.
+Only the tested upstream route is fault-injected. It asserts the exact complete
+API and console error lists, real successful companion responses, browsable
+catalog/detail, safe unknown-membership actions, retry/reload, unchanged persisted
+inclusion and no writes, late-response isolation, and the existing 401 message.
+Separate explicit catalog-500 tests exercise both Home's create fallback and the
+already-working empty-Plans create CTA; there is no catalog-dependent test branch.
+Read-only fixtures 939981/939982 (course) and 939971/939972 (empty plan, plus their
+foreign-workout companions) are registered without changing the finite calendar
+map or harness guards. The course has no last-session date, so week/month rollover
+does not require fixture clock changes. Full final-head CI and independent review
+remain required after the prerequisite PR #389 is integrated.
+
+Local validation: the exact final regression assertions fail on the unmodified
+6915e3e UI (three selected cases), then pass on the restored fix (all seven cases,
+four workers). The first baseline also passed the already-working empty-Plans
+fallback. Frontend production build and functional TypeScript checks pass, along
+with 29 Home/discovery/week unit assertions, 29 registry/calendar-guard/clock
+checks, the existing real-PostgreSQL fixture/timestamp isolation case, and the
+existing global expired-session UI case. A fixed local-Monday boundary inventory
+also confirms all four new identities and both foreign-workout companions remain
+outside the finite calendar map and keep the ordinary application/engine clocks.
+
+## Frontend toolchain audit #367 (2026-11-17, candidate)
+
+The frontend lock on `main` `869cd0d` reported nine vulnerable packages
+(four moderate, three high, two critical); `npm audit --omit=dev` reported zero.
+The candidate upgrades Vite 5.4.21 → 6.4.6 and Vitest 2.1.9 → 4.1.12,
+and refreshes the existing PostCSS transitive `source-map-js` 1.2.1 → 1.2.2.
+Full and production-only audits both report zero after a clean `npm ci`.
+Production dependency versions, application code and database schema are unchanged.
+
+Version selection checked the upstream advisories and published package engines:
+
+- [Vite path handling](https://github.com/vitejs/vite/security/advisories/GHSA-rq7h-c2jc-7f22)
+  is patched from 6.4.4; the current 6.4.6 maintenance release keeps Node 20/24 compatibility.
+  Its esbuild dependency moves from 0.21.5 to 0.25.12, beyond
+  [the affected development-server range](https://github.com/advisories/GHSA-67mh-4wv8-2f99).
+- [Vitest mock registration](https://github.com/vitest-dev/vitest/security/advisories/GHSA-qxg6-89mg-rqv8)
+  requires the 4.1.12 backport. This also includes the earlier mocker and UI-server fixes.
+  Vitest 4 removes `vite-node` and `tinypool` from this graph, including the
+  [affected worker-options implementation](https://github.com/tinylibs/tinypool/security/advisories/GHSA-85c8-ppgw-ccpr).
+- [source-map-js indexed-map offsets](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
+  are patched in 1.2.2; a targeted transitive refresh satisfies PostCSS's existing range.
+
+Vite's Node engine is `^18.0.0 || ^20.0.0 || >=22.0.0`; Vitest's is
+`^20.0.0 || ^22.0.0 || >=24.0.0`. Existing `@vitejs/plugin-react` 4.7.0 accepts
+Vite 6. No override, audit exclusion, force upgrade or TLS bypass is needed.
+The existing Node 20 Docker/E2E builds and Node 24 unit-test job remain compatible.
+These are development-tool findings, not evidence of production exploitation:
+`Dockerfile.web` copies only `dist` into the Python runtime and starts uvicorn;
+the Vite development server and frontend `node_modules` are absent from that stage.
+
+Local candidate checks: clean `npm ci`, TypeScript/Vite production build, all 56
+Node unit-test files, 34 shared vectors, functional typecheck/browser collection
+(624 cases), staging typecheck/collection (38 cases) and 14 staging platform
+contracts pass.
+Functional E2E typecheck on the original baseline reports the seven errors fixed
+separately by prerequisite PR #390. This branch merges that reviewed prerequisite
+normally; real API/PostgreSQL browser results must use the combined candidate SHA.
+`Dockerfile.web` builds successfully with Node 20, strict TLS and the cloud's public
+CA bundle supplied through its existing `proxy_ca` BuildKit mount. Full hosted CI
+and independent review remain required before merging this candidate. A
+network-disabled one-shot Python check inside the built image confirms static
+`dist/index.html`, uvicorn availability, and absence of Node/frontend `node_modules`;
+the image command is the unchanged uvicorn entry point.
+
 ## Planless history compatibility (2026-11-15, source candidate)
 
 The blanket `history_without_plan` test conflated missing migration state with supported runtime states.
