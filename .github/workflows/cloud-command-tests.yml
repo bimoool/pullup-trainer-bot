@@ -56,3 +56,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m unittest discover -s tools/tests -v
+      - name: Root controller filesystem fixtures
+        run: |
+          sudo -- "$(python -c 'import sys; print(sys.executable)')" -m unittest \
+            tools.tests.test_server_control_staging \
+            tools.tests.test_server_control \
+            tools.tests.test_server_control_client -v

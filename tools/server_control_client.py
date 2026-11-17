@@ -39,6 +39,7 @@ SAFE_KEYS = {
     "restore_min_ram_mib",
     "services",
     "runner_hashes",
+    "staging_runner_attestation",
     "app",
     "web",
     "db",
@@ -83,11 +84,42 @@ def safe_receipt(raw, sha, operation):
         "receipt attribution",
     )
 
+    def check_staging_attestation(item):
+        require(
+            isinstance(item, dict)
+            and set(item)
+            == {"installed_state", "installed", "candidate_state", "candidate", "match"},
+            "unapproved staging attestation fields",
+        )
+        for prefix in ["installed", "candidate"]:
+            state, digest = item[prefix + "_state"], item[prefix]
+            require(
+                isinstance(state, str) and state in {"PRESENT", "ABSENT", "UNTRUSTED", "UNKNOWN"},
+                "unapproved staging attestation state",
+            )
+            require(
+                isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+                if state == "PRESENT"
+                else digest is None,
+                "unapproved staging attestation hash",
+            )
+        known = item["installed_state"] == item["candidate_state"] == "PRESENT"
+        require(
+            type(item["match"]) is bool
+            and item["match"] == (item["installed"] == item["candidate"])
+            if known
+            else item["match"] is None,
+            "unapproved staging attestation match",
+        )
+
     def check(item):
         if isinstance(item, dict):
             require(set(item) <= SAFE_KEYS, "unapproved receipt field")
-            for field in item.values():
-                check(field)
+            for key, field in item.items():
+                if key == "staging_runner_attestation":
+                    check_staging_attestation(field)
+                else:
+                    check(field)
         elif isinstance(item, str):
             require(
                 len(item) <= 180 and re.fullmatch(r"[A-Za-z0-9:._/+ -]*", item),

@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import hashlib
 import json
 import os
+import pwd
 import re
 import shutil
 import stat
@@ -32,6 +34,8 @@ RUNNERS = (
     "rollback-production-guarded.sh",
     "prod-guarded-dispatch.sh",
 )
+STAGING_ROOT_UID = 0
+STAGING_RUNNER_LIMIT = 262144
 
 
 class Refused(Exception):
@@ -482,6 +486,140 @@ def query(db, sql):
     )
 
 
+def staging_installed_hash():
+    """Observe only the dispatcher's fixed deploy-owned executable, without following links."""
+    fds = []
+    try:
+        owner = pwd.getpwnam("deploy")
+        require(owner.pw_uid > 0 and owner.pw_dir == "/home/deploy", "UNTRUSTED")
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        root = os.open("/", directory_flags)
+        fds.append(root)
+        chain = []
+        for name, uid in [
+            (None, STAGING_ROOT_UID),
+            ("home", STAGING_ROOT_UID),
+            ("deploy", owner.pw_uid),
+        ]:
+            if name is not None:
+                fds.append(os.open(name, directory_flags, dir_fd=fds[-1]))
+            info = os.fstat(fds[-1])
+            require(
+                stat.S_ISDIR(info.st_mode) and info.st_uid == uid and not info.st_mode & 0o7022,
+                "UNTRUSTED",
+            )
+            chain.append((name, info))
+
+        name = "deploy-staging-guarded-run.sh"
+        fd = os.open(
+            name,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            dir_fd=fds[-1],
+        )
+        fds.append(fd)
+        before = os.fstat(fd)
+        require(
+            stat.S_ISREG(before.st_mode)
+            and before.st_uid == owner.pw_uid
+            and stat.S_IMODE(before.st_mode) == 0o755
+            and before.st_nlink == 1
+            and 0 < before.st_size <= STAGING_RUNNER_LIMIT,
+            "UNTRUSTED",
+        )
+        # A growing file cannot cause an unbounded read. Metadata/identity checks
+        # below discard the digest on in-place writes, renames or path replacement.
+        blob = bytearray()
+        while len(blob) <= STAGING_RUNNER_LIMIT:
+            chunk = os.read(fd, min(65536, STAGING_RUNNER_LIMIT + 1 - len(blob)))
+            if not chunk:
+                break
+            blob.extend(chunk)
+        require(len(blob) == before.st_size, "UNKNOWN")
+
+        def identity(info):
+            return (
+                info.st_dev,
+                info.st_ino,
+                info.st_mode,
+                info.st_uid,
+                info.st_gid,
+                info.st_nlink,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            )
+
+        require(identity(os.fstat(fd)) == identity(before), "UNKNOWN")
+        require(
+            identity(os.stat(name, dir_fd=fds[-2], follow_symlinks=False)) == identity(before),
+            "UNKNOWN",
+        )
+        for index, (entry, info) in enumerate(chain):
+            require(identity(os.fstat(fds[index])) == identity(info), "UNKNOWN")
+            if entry is not None:
+                require(
+                    identity(os.stat(entry, dir_fd=fds[index - 1], follow_symlinks=False))
+                    == identity(info),
+                    "UNKNOWN",
+                )
+        return "PRESENT", hashlib.sha256(blob).hexdigest()
+    except FileNotFoundError:
+        return ("UNKNOWN" if len(fds) == 4 else "ABSENT"), None
+    except KeyError:
+        return "UNKNOWN", None
+    except Refused as exc:
+        return str(exc), None  # Only the two literal local states above.
+    except OSError as exc:
+        return ("UNTRUSTED" if exc.errno in {errno.ELOOP, errno.ENOTDIR} else "UNKNOWN"), None
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)
+
+
+def staging_candidate_hash(sha, found):
+    if not found:
+        return "ABSENT", None
+    expression = sha + ":deploy/deploy-staging-guarded-run.sh"
+    try:
+        # Check immutable Git object size before materializing its bytes. This
+        # reads metadata only; no checkout, fetch or candidate code execution.
+        result = subprocess.run(
+            ["git", "-C", str(REPO), "cat-file", "--batch-check"],
+            input=(expression + "\n").encode(),
+            capture_output=True,
+            timeout=25,
+            check=False,
+        )
+        require(result.returncode == 0, "UNKNOWN")
+        if result.stdout == (expression + " missing\n").encode():
+            return "ABSENT", None
+        metadata = re.fullmatch(rb"([0-9a-f]{40}) blob ([0-9]+)\n", result.stdout)
+        require(metadata is not None, "UNTRUSTED")
+        size = int(metadata[2])
+        require(0 < size <= STAGING_RUNNER_LIMIT, "UNTRUSTED")
+        blob = command(["git", "-C", str(REPO), "cat-file", "blob", metadata[1].decode()])
+        require(len(blob) == size, "UNKNOWN")
+        return "PRESENT", hashlib.sha256(blob).hexdigest()
+    except Refused as exc:
+        return ("UNTRUSTED" if str(exc) == "UNTRUSTED" else "UNKNOWN"), None
+    except (OSError, subprocess.SubprocessError):
+        return "UNKNOWN", None
+
+
+def staging_runner_attestation(sha, found):
+    installed_state, installed = staging_installed_hash()
+    candidate_state, candidate = staging_candidate_hash(sha, found)
+    return {
+        "installed_state": installed_state,
+        "installed": installed,
+        "candidate_state": candidate_state,
+        "candidate": candidate,
+        "match": installed == candidate
+        if installed_state == candidate_state == "PRESENT"
+        else None,
+    }
+
+
 def observation(sha):
     available, disk = resources()
     found = object_present(sha)
@@ -520,6 +658,7 @@ def observation(sha):
             "candidate": expected,
             "match": actual == expected if found else False,
         }
+    result["staging_runner_attestation"] = staging_runner_attestation(sha, found)
     return result
 
 

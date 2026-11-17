@@ -1,5 +1,18 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Candidate staging runner attestation #360 — 2026-11-17
+
+Readiness adds a separate fixed-path staging installed/candidate hash fact because
+its existing three root `runner_hashes` cannot attest the staging dispatcher’s
+deploy-owned executable. Synthetic real Git/filesystem regressions reproduce the
+missing fact before the change and cover byte differences, absent/untrusted files,
+bounded reads, concurrent drift and strict anonymous receipt validation. Contract
+and limits: [CLOUD_SERVER_CONTROL.md](CLOUD_SERVER_CONTROL.md#separate-staging-runner-evidence-360).
+The existing startup health waits, runner bytes, admission, claims, locks and
+deployment behavior are unchanged. Full current CI and independent review remain
+integration gates. Source integration is not controller activation, an installed
+staging hash, runtime acceptance or completion of #360; no server action ran.
+
 ## Candidate narrow 1RM speed layout #359 — 2026-11-17
 
 Real built React/API/PostgreSQL reproduction confirms overlapping speed labels at
