@@ -394,3 +394,13 @@ semantics. Focused validation: 15 signed PostgreSQL/API, 14 new pure, 14 adjacen
 unit and 10 registry cases passed; changed-spec TypeScript checks passed.
 No application, seed, SQL, guard, workflow, registry or calendar harness changes.
 Next: exact final-head hosted CI and independent review in the same PR.
+
+## Functional E2E typecheck integration (#391, 2026-11-17)
+
+Continue existing PR390 on current main, preserving its branch history.
+The seven strict functional TypeScript errors reproduce on current main;
+the reviewed DOM.Iterable and fixture-type repairs remove all seven. Add the
+functional typecheck before browser execution while preserving the separate
+peer-insights/main browser failure reporting. Product/runtime, subscription,
+schema and release controls remain unchanged. Acceptance: exact combined-head
+CI and review, then protected integration; no production operation.
