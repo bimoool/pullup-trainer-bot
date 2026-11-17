@@ -67,4 +67,4 @@ approval to republish personal data. External Sheet URLs and account-derived
 values are deliberately excluded from this index.
 
 No reference-app session, account mutation, product test, production command,
-new credential or Sheet operation was performed for this inventory.
+new credential or Sheet write was performed for this inventory.
