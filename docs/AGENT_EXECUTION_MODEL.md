@@ -1,295 +1,219 @@
 # Agent Execution Model — Canonical Rules for Claude/Code Agents
 
-This document specifies how Claude agents interact with this codebase — context isolation, model selection, parallel work boundaries, and safety practices for checkpoints and implementation.
+This document governs task briefs, ownership, bounded checkpoints and verification.
+It reconciles the October brief proposal with the current restart rules in
+[AGENTS.md](../AGENTS.md). It does not grant permissions or activate an executor.
 
-## Fresh Context Policy
+## Current coordination and evidence
 
-Every accepted implementation checkpoint ends the current session context.
+Read current `origin/main`, the task issue and PR head before choosing work. The
+[safe checkpoint in #377](https://github.com/bimoool/pullup-trainer-bot/issues/377#issuecomment-6897382093)
+is an entry point, not a permanently current status record. Reconcile its claims
+with fresh refs, live ownership, exact-head CI/reviews and permitted operation
+receipts. An old label, successful run on another SHA or generated status mirror
+cannot establish completion, authorization or current runtime state.
 
-- A checkpoint is a **commit** with atomic, testable scope (e.g., "mixed execution" or "Analytics v2"), immediately **pushed** to its branch (push ≠ merge, push ≠ deploy).
-- The next implementation task (or next checkpoint within the same task) **starts in a new Chat/Code session**.
-- Reusing a long implementation context for an unrelated next block risks carrying forgotten dependencies, stale file state, or conflicting memories between tasks.
+Carry forward explicit owner authorization within its recorded scope. Delegated
+technical implementation, tests, coordination and protected integration do not
+require repeated permission, owner command relay, a new chat or manual QA as a
+generic prerequisite. A specific unresolved acceptance requirement still matters:
+synthetic browser proof cannot be renamed physical-device or native acceptance.
+Report a missing capability immediately, use a bounded permitted alternative
+where it proves the same requirement, and continue independent authorized work.
+Do not bypass a permission refusal or substitute unavailable evidence with a pass.
 
-**Rationale:** Clean context boundaries prevent coupling between independent work and force explicit re-establishment of preconditions (branch, HEAD, `git status`) before each new block.
+Production/recovery, rollback, schema/data migrations, deletion or possible data
+loss, new credentials, paid usage and messages to others retain their separate
+explicit scope and guarded admission. Existing permission persists; a source PR,
+this document or an available tool does not expand it. Source readiness is not
+installation, execution or runtime acceptance. Preserve claims and reconcile
+UNKNOWN outcomes before any action that could repeat an operation.
+
+## Navigator brief gate
+
+Read these rules before assigning work. Record a concrete brief in the task or
+coordinator handoff; do not make the owner carry it between tools or sessions.
+Use the current environment and continue the existing task branch/session when
+capable. Do not duplicate a pushed branch, PR or active writer.
+
+```
+RUN MODE: <verified local/cloud/chat capability>
+MODEL: <assigned model, or unavailable; do not guess a version>
+MODEL REASON: <task complexity; respect the existing assignment>
+SESSION: <continue identified task, or reason for a new context>
+TASK TYPE: <research/audit/implementation/documentation/release>
+BASE SHA: <fresh full SHA, or N/A with reason>
+BRANCH / WORKTREE: <existing task branch and exact path, or read-only>
+ACCESS: <verified inputs/tools and unavailable dependencies>
+AUTHORIZED ACTIONS: <existing scope, exclusions and publication holds>
+DELIVERABLE: <bounded result and acceptance criteria>
+TESTS / EVIDENCE: <reproduction, checks, review and remaining gates>
+TIMEBOX / NEXT STATUS: <bounded milestone; separate active work from CI waits>
+```
+
+For a brief above roughly 10–15 minutes, declare intermediate checkpoints or
+split independently reviewable scope; see
+[worker-task-template](../.claude/skills/worker-task-template/SKILL.md).
+A capability denial is a blocker to that action, not an invitation to retry
+indefinitely or ask the owner for command relay. State the exact gap and the
+bounded alternative. Do not promise continuous monitoring without a verified,
+authorized mechanism; waiting for CI is not coding or daemon execution.
+
+### Reference audit to implementation gate
+
+For a new reference-driven product proposal or audit campaign:
+
+1. Verify available reference/version and scope. Mark **OBSERVED**, **INFERRED**
+   and **UNKNOWN**; screenshots, historical DONE rows and notes have bounded meaning.
+2. Observe complete journeys and, where authorized and available, reproduce ours.
+   Record source, scenario, actual result and missing evidence.
+3. Maintain one durable backlog with stable IDs, impact, evidence, acceptance
+   criteria, dependencies and confidence. Recheck findings, missing states and
+   cross-screen consequences before proposing implementation slices.
+4. Obtain the product decision for new/unaccepted behavior and proposed UX scope
+   before implementing it. Reference OBSERVED is not an accepted product contract.
+   Proposed issues such as #352/#354 do not become approved by being in a backlog.
+5. Implement accepted slices and verify behavior. Existing decisions and delegated
+   technical repairs need no new generic sprint approval or repeat of the entire
+   reference campaign. A read-only audit remains read-only unless its scope changes.
+
+Keep documented domain/platform differences and unresolved product choices visible.
+CI green is engineering evidence, not automatic UX, device or release acceptance.
+
+## Fresh Context Policy (implementation checkpoints)
+
+At each bounded block, refresh branch, HEAD, worktree status, ownership and relevant
+external state. Continue the existing capable session; a new context is useful
+when needed for clarity, not a mandatory owner-mediated handoff. Preserve enough
+durable evidence for another session to resume without chat memory.
 
 ## Chat vs. Code: Tool & Context Selection
 
-Use **Chat** for:
-- Planning, design discussion, lightweight GitHub queries or status checks.
-- Conceptual read-only work, exploratory questions.
-- Stakeholder-facing explanations or impact assessments.
-
-Use **Code** for:
-- Repository changes (commits, pushes).
-- Running commands, tests, environment setup.
-- Long-running audits or investigations with file I/O.
-
-**Implementation checkpoint implies Code:** acceptance and push always happen in Code, never left as "later do this in Chat."
+Select tools by verified capability. Repository changes require a writable task
+worktree; source review may use the connected repository tools. Planning and
+explanations do not imply shell, device, server or workflow-dispatch access.
+Do not send the owner to another chat or local terminal merely because a particular
+capability is unavailable; finish the independent authorized work here.
 
 ## Model Routing — Escalation by Complexity
 
-Default to **FAST / Haiku** for:
-- Documentation-only edits and validation.
-- GitHub hygiene: PR titles, branch creation, simple status queries.
-- Mechanical edits (line-of-code, rename refactors, config updates).
-- Test report collection and simple test audits.
-- Non-architectural bug reports or minor fixes.
-
-Use **STANDARD / Sonnet** for:
-- Normal backend/frontend/API/React/SQLAlchemy implementation.
-- Environment setup and reference automation.
-- Multi-file refactors, moderate architectural changes.
-
-Use **STRONG / Opus** for:
-- Architecture design, race conditions, transaction logic.
-- Security analysis, risky migrations, unclear root cause diagnostics.
-- Major domain-design decisions or complex integrations.
-
-**Escalate only when needed.** Attempt the task at the default level; if blocked by genuine architectural uncertainty or a subtle race, escalate explicitly. Do not escalate preemptively.
+Keep the assigned model and session unless a change is explicitly authorized.
+For an authorized assignment, scale reasoning to complexity: documentation and
+mechanical checks are usually simple; normal implementation needs code reasoning;
+architecture, races and security require deeper review. These are routing guides,
+not permission to invent a model version or spawn additional writers.
 
 ## Parallel Work Boundaries
 
-Concurrent writers (multiple agents or sessions) **MUST** use:
-- Separate **worktrees** (git worktree).
-- Separate **branches**.
-- Separate **GitHub issues/tasks** or explicit conflict-prevention strategy.
+One active source writer at a time under the coordinator's ownership record.
+Before transfer, save a clean checkpoint and explicitly release ownership; the
+next writer verifies it afresh. A functional failure can preempt documentation
+work by explicit transfer. Independent read-only review can proceed on a pinned
+SHA. It must not edit the writer's checkout or silently take ownership.
 
-Read-only agents may inspect the same canonical commit (SHA) without worktrees.
-
-**Never allow two coding agents to write the same checkout simultaneously.** Enforce this at task assignment time, not during the work.
+Use one task branch/worktree, continue existing pushed work, and preserve unknown
+or unfinished files. Separate worktrees do not themselves authorize concurrent
+source writers. Never reset, rebase or force-push preserved task history to refresh
+a branch; use a normal merge of current main within the authorized task scope.
 
 ## Worktree Lifecycle (mandatory)
 
-Every concurrent writer follows four stages. A worktree that skips CLEAN is a resource leak
-(2026-10: 56 worktrees, 27 forgotten uvicorn servers, a shared Postgres out of connections).
+1. **CREATE / CONTINUE** — inspect `git worktree list`, branch and status first.
+   Reuse the existing task branch; a new task starts from current `origin/main`.
+2. **WORK** — keep bounded commits and publish checkpoints when the coordinator's
+   integration freeze permits. A held local checkpoint is prepared, not published.
+3. **ACCEPT** — current checks and review, protected integration, verified main tree.
+4. **CLEAN** — stop only the task's own test processes. Remove accepted worktrees
+   only after proving them clean, pushed, unused and free of shared dependencies;
+   never use force or delete unknown/untracked work. Uncertain means retain.
 
-1. **CREATE** — `task → branch → worktree`. One task, one branch, one worktree
-   (`git worktree add -b parallel/<task> ../pullup-par-<task> origin/develop/current`).
-   Share the heavy dependencies by symlink (`.venv`, `node_modules`) instead of reinstalling.
-2. **WORK** — `commit → push checkpoint` (see § GitHub / Checkpoint Safety). Pushed = preserved.
-3. **ACCEPT** — review → integrate → tests → push canonical (`develop/current`).
-4. **CLEAN** — as soon as a task is accepted: stop its test server, `git worktree remove <path>`
-   (never `--force`), `git worktree prune`, `git branch -d <branch>` (never `-D`).
-   Use `python scripts/resource_janitor.py local-clean` (dry-run by default, `--apply` to act): it
-   refuses dirty, unpushed, canonical, current, in-use and shared-dependency-host worktrees.
-
-Rules:
-- A navigator **MUST clean completed worker worktrees before creating new ones**. Do not start wave
-  N+1 while wave N's accepted worktrees still exist.
-- At a usage-limit / session handoff the navigator **lists every retained worktree and WHY it
-  remains** (active worker, unpushed work, dependency host, owner decision) in its final comment.
-- Never delete a worktree that is dirty, has unpushed commits, or is used by a running process.
-  Uncertain = keep, and say so.
-- A worktree that hosts the shared `.venv` / `node_modules` of others is cleaned last, after its
-  consumers are gone.
+Shared dependencies remain read-only. At handoff record retained task worktrees,
+unpublished work, ownership and blockers. Cleanup is not permission to touch other
+workers' processes, accounts or data. See [RESOURCE_LIFECYCLE](RESOURCE_LIFECYCLE.md).
 
 ## Test Resource Policy
 
-- **Parallel workers:** *focused* tests only by default — the unit/pytest files touching their change
-  and the Playwright specs for their screen. They do **not** run the full suite.
-- **Navigator / integration tree:** the only place for the full `pytest` + full Playwright gate.
-  One browser stack at the gate, not six independent complete stacks, unless a worker's task
-  technically needs one (state why in the issue comment).
-- **Servers:** every E2E/dev server a run starts must die with the run. `.github/orch/e2e.sh`
-  stops its own uvicorn via an `EXIT` trap (by PID, never `pkill -f`, which would kill other
-  agents' servers). Local runner scripts must do the same. A server on ports 8011–8099 older than
-  2 h with no owner is an orphan; `resource_janitor.py audit` lists it and `local-clean --apply`
-  stops it. Shared test Postgres containers are stopped when the wave ends.
-- Generated output (`playwright-report/`, `test-results/`, captures) stays out of git and is
-  removed by the janitor after 3 days.
+Use focused checks for the change before full integration gates. Reproduce bugs
+before a fix, demonstrate RED → GREEN and rollback evidence as required by the
+constitution. Database checks require synthetic data and an explicit isolated
+PostgreSQL database; never use production for tests. Do not add tests just for activity.
+Documentation-only checks validate changed links, headings, scope and semantics.
 
-See `docs/RESOURCE_LIFECYCLE.md` for thresholds, monitoring and the VPS side.
+The coordinator owns the full integration gate and resource allocation. On the
+final combined head, inspect all current required CI/security/native checks and
+reviews; an earlier head's success cannot admit this one. Report actual workflow
+classification and skips: a docs-only skip is not a full product test pass.
+Investigate failures with bounded retries and fresh evidence; do not weaken
+assertions, disable checks or rerun old heads to manufacture green status.
+
+Stop only the task's own test servers by known ownership/PID. Preserve shared
+dependencies and services. Privacy-safe selected evidence may be published;
+real data, credentials, private investigation details and raw logs must not enter
+public comments, commits or CI artifacts.
 
 ## Long-Running Tasks
 
-Prefer **coherent multi-hour implementation blocks** when scope is clear (e.g., "implement Analytics v2" as one continuous session, not broken into five tiny prompts).
-
-Avoid unnecessary micromanagement prompts unless:
-- A checkpoint is accepted and needs explicit validation before the next phase.
-- The task explicitly requires staged human decisions.
-- An unexpected blocker requires re-planning.
-
-Continuous flow within a well-defined scope is more efficient than task-switching.
+Prefer scenario-based work in bounded, independently reviewable blocks. A
+multi-hour campaign consists of checkpoints, not one unbounded worker run.
+Each milestone records result, exact evidence, unresolved blockers and next work.
+Separate active work from CI waits and unavailable access. Continue within the
+existing authorized scope without a five-task stop, forced new chat or repeated
+generic approval. Scope growth involving an unresolved product or separate
+operational decision remains a real boundary.
 
 ## Reference-First UX
 
-For product behavior driven by external references (Telegram API, GTO standards, official specifications):
-- Inspect the actual reference before implementing, not memory.
-- Mark findings as **OBSERVED** (verified against reference), **INFERRED** (deduced from code behavior), or **UNKNOWN** (unconfirmed).
-- Do not invent reference behavior (e.g., "GTO categories are probably…" without checking).
-
-**Rationale:** Mismatches between assumed and actual reference behavior are expensive, often undetected until production use.
+Use the accepted [PROJECT_SPEC](PROJECT_SPEC.md) and documented domain/platform
+constraints. Inspect the relevant reference when the task needs it; never infer
+unobserved behavior from memory. The reference gate above controls new proposals,
+while accepted technical fixes retain their existing scope and acceptance criteria.
 
 ## GitHub / Checkpoint Safety
 
-Accepted implementation checkpoint:
-1. **Code changes** committed with clear, focused message.
-2. **Immediately pushed** to the branch (no "will push later").
-3. Push does NOT imply merge to main or deployment.
-4. **Never force-push** unless explicitly pre-approved for a specific SHA (rare).
-
-**Rationale:** Leaving accepted work only local risks loss (git GC, accidental reset, session crash) and blocks other sessions from seeing the work. Push is the safety gate between "done locally" and "safe remotely."
+1. Commit focused changes on the existing task branch. Preserve existing history
+   and untracked work; record any publication hold and the exact local checkpoint.
+2. Before publication, refresh current main and PR head. Respect the coordinator's
+   active integration freeze, then normally merge fresh main and publish once for
+   current-head gates. Push does not imply main merge or deployment.
+3. Before an authorized main merge, require root/coordinator and independent
+   review of the exact combined head, resolved findings, and all current required
+   gates. Use protected expected-head-SHA merge; verify the resulting main tree.
+   A changed head/base or unexplained tree requires reconciliation, not blind retry.
+4. Publish only privacy-safe source/CI/task evidence and a concrete next step.
+   Preserve operation claims; UNKNOWN is not failed or safe to replay.
 
 ## Prompt Header Convention
 
-Canonical technical prompts (for complex implementation tasks) explicitly state:
-
-```
-RUN MODE: <mode: NEW CODE SESSION or other>
-MODEL: <FAST / HAIKU | STANDARD / SONNET | STRONG / OPUS>
-NEW CONTEXT REQUIRED: <YES or NO>
-TASK TYPE: <IMPLEMENTATION | DOCUMENTATION | AUDIT | RESEARCH | etc.>
-BASE SHA: <if creating worktree>
-BRANCH / WORKTREE: <if creating new>
-```
-
-**Example:**
-```
-RUN MODE: NEW CODE SESSION
-MODEL: STANDARD / SONNET
-NEW CONTEXT REQUIRED: YES
-TASK TYPE: IMPLEMENTATION
-TASK: Implement Analytics v2 dashboard
-BASE SHA: 830f205
-BRANCH: feature/analytics-v2-dashboard
-```
-
-This header ensures the agent immediately understands scope and context without re-deriving it from scattered instructions.
+Use the single header in **Navigator brief gate**, including actual base, branch,
+authorization, acceptance and tests. No second abbreviated format or handoff to
+the owner is required. Keep routine status updates concise and factual.
 
 ## Single Source of Truth
 
-The repository is the **only canonical source of truth** — not chat history, not memory, not external notes.
-
-- Architectural decisions: embedded in code structure and comments.
-- Product requirements: `docs/PROJECT_SPEC.md`.
-- Implementation status: `docs/IMPLEMENTATION_PLAN.md` + commit history.
-- Established practices/pitfalls: `docs/ENGINEERING_NOTES.md` + `.specify/memory/constitution.md`.
-- Current mandatory entry point: `CLAUDE.md`.
-
-Agents read the repository first, memory second. If memory contradicts the repository, trust the repository and update memory.
+The repository holds the accepted product and architecture contract. Fresh GitHub
+refs, source, reviews, checks and permitted primary receipts establish current
+task and runtime facts. Read the latest explicit owner scope and safe checkpoint,
+then verify the underlying evidence. Labels and prose snapshots cannot override
+the actual head, failed/pending gates or an unknown operation outcome.
 
 ## Constitution Precedence
 
-When multiple documents provide guidance (for executing a tracked task, the owner decision and the
-issue's acceptance criteria sit on top — see *Orchestration → Precedence for a task* below):
+Within the owner's authorized scope, apply: constitution → PROJECT_SPEC →
+IMPLEMENTATION_PLAN → ENGINEERING_NOTES / ADRs / skills → code as implementation
+fact → historical chat/memory. A new product/core-progression decision or conflict
+with the constitution requires a precise decision on that scope; do not invent it.
+Routine technical choices already delegated to the coordinator do not create a
+new generic owner stop. This document does not amend the constitution or product.
 
-1. **Constitution** (`.specify/memory/constitution.md`) — architectural principles, non-negotiable.
-2. **PROJECT_SPEC** (`docs/PROJECT_SPEC.md`) — accepted product behavior.
-3. **IMPLEMENTATION_PLAN** (`docs/IMPLEMENTATION_PLAN.md`) — what's done, what's next.
-4. **ENGINEERING_NOTES** (`docs/ENGINEERING_NOTES.md`) + ADRs + skills — established practices, lessons, pitfalls.
-5. **Code as fact** — actual state of implementation.
-6. **Chat/memory** — lowest priority; used for context, not as source of truth.
+## Orchestration (ORCH-1) — historical only
 
-At each level, the item above wins on conflicts. If no guidance from above, descend to the next level. If still unresolved → stop and ask the owner, do not invent.
+The October `develop/current` planner/worker loop, `.github/orch/state.json`,
+`.github/task/current.md`, `PROJECT_STATUS`, five-task batch and retired dashboard
+#230 describe historical orchestration. Do not auto-resume it, dispatch its queue
+or merge its branch into main. Old labels/keyword stop patterns do not grant or
+revoke current task authorization. The [historical document](https://github.com/bimoool/pullup-trainer-bot/blob/2cff8703973bc4797a80215264abbb59a1e57af3/docs/AGENT_EXECUTION_MODEL.md)
+preserves that mechanism for investigation; it is not an operating instruction.
 
-## Orchestration (ORCH-1) — GitHub is the task state
-
-Claude Code chats/sessions are **disposable**. Nothing needed to resume may live only in a
-Claude sidebar, local memory, an unpushed branch, a local todo file or terminal scrollback.
-Everything required lives in: **GitHub Issues** (labels + comments), **pushed git history**,
-canonical docs, and three orchestration files on `develop/current`:
-
-| File | Role | Written by |
-|---|---|---|
-| `.github/orch/state.json` | canonical branch/PR, phase, batch counter | planner / finish step / owner |
-| `.github/task/current.md` | the ONE active execution brief (`ISSUE: none` when idle) | planner / finish step |
-| `docs/PROJECT_STATUS.md` | short human view (+ mirrored to the pinned `orch:dashboard` issue) | `scripts/orch.py status` |
-
-### Precedence for a task
-
-1. explicit owner decision (issue comment/label by the owner)
-2. the GitHub issue's acceptance criteria — *what* this task must do
-3. constitution + this document — *how* any task must be done
-4. `docs/PROJECT_SPEC.md` 5. `docs/IMPLEMENTATION_PLAN.md` 6. actual code
-7. `docs/PROJECT_STATUS.md` (a generated **view**, never authority on behaviour) 8. historical docs/chat
-
-Acceptance criteria that contradict the constitution or PROJECT_SPEC are not executed: that is
-an owner stop condition (`status:needs-owner`), resolved by the owner, then the lower doc is fixed.
-
-### Task states (labels; exactly one `status:*` per open issue)
-
-```
-status:backlog ──(owner/planner session: template complete, AC clear)──▶ status:ready
-status:ready ──(planner selects; one at a time)──▶ status:in-progress
-status:in-progress ──(worker: AC met, verification green, merged to develop/current)──▶ status:done + closed
-status:in-progress ──(technical blocker)──▶ status:blocked
-status:ready | in-progress ──(decision/credentials/device/prod/vague AC)──▶ status:needs-owner
-status:blocked | needs-owner ──(owner resolves, comments)──▶ status:ready
-```
-
-Never `ready`+`in-progress`, never `in-progress`+`done`, never two open `in-progress` issues —
-`python scripts/orch.py check` reports violations and the planner refuses to run on them.
-Also: `priority:p0|p1|p2`, `type:bug|feature|ux|infra|qa`, `orch:owner-approved` (owner cleared a
-stop-condition tripwire), `orch:dashboard` (status issue), `orch:test` (orchestrator test issues).
-
-### Loop
-
-**Planner** (`docs/PLANNER_AGENT.md`) → selects ONE ready issue, labels it in-progress, writes the
-brief, pushes state → dispatches **Worker** (`docs/WORKER_AGENT.md`) → implements on
-`orch/issue-<N>`, verification, merge to `develop/current`, labels/closes, increments batch →
-dispatches **Planner** again. Actions workflows: `orch-planner.yml`, `orch-worker.yml`,
-`orch-status.yml` (all `workflow_dispatch`/push on `develop/current`; see their headers).
-
-### Batch limit
-
-At most **5 completed** tasks (and at most 8 worker attempts) per batch. Then the batch is
-`owner-review`, `PROJECT_STATUS` shows `AUTONOMOUS BATCH n: 5/5 — STOP — OWNER REVIEW REQUIRED`,
-and nothing starts a sixth task. Only the owner starts a batch:
-`gh workflow run orch-planner.yml --ref develop/current -f command=start-batch`
-(or `python scripts/orch.py batch start --push` on develop/current). `-f command=stop-batch` stops.
-
-### Cross-device checkpoint rule
-
-**commit → push → issue comment → PROJECT_STATUS refresh**, after each accepted block and at
-least every 30–60 min of long work (`python scripts/orch.py checkpoint --issue N --note …`).
-If a machine dies, another one resumes from `origin` + the issue — never from memory.
-
-### Resume from another computer
-
-```bash
-git clone https://github.com/bimoool/pullup-trainer-bot && cd pullup-trainer-bot   # or: git fetch
-git switch develop/current && git pull
-cat docs/PROJECT_STATUS.md            # or open the pinned "Project Status" issue on GitHub
-python scripts/orch.py resume         # active issue, its pushed branch, exact worktree command
-```
-
-An existing pushed `orch/issue-<N>` branch is **continued**, never duplicated. Read the issue's
-latest `📍 Checkpoint` / `🤖 Worker result` comment first.
-
-### Automation (GitHub Actions) — what runs by itself
-
-| Workflow | Trigger | Does |
-|---|---|---|
-| `orch-planner.yml` | `workflow_dispatch` (owner, or worker hop) | `plan` dry-run/apply, `start-batch` (owner only), `stop-batch`, `status`; dispatches the worker |
-| `orch-worker.yml` | `workflow_dispatch` (planner, or owner) | Claude implements the brief → always-push → ruff/pytest/frontend + real Playwright E2E gate (E2E-relevant paths; toolchain owned by the workflow, never the agent; red gate ⇒ one auto-retry on the same branch, then blocked) → merge `--no-ff` into base → `worker-record` → dispatches planner while the batch runs |
-| `orch-status.yml` | push to `develop/current`, dispatch | rewrites the pinned dashboard issue (#230) |
-
-Level **A**: planner → worker → planner runs unattended once the owner starts a batch
-(proved live on the sandbox branch, #229). Owner commands, from any computer with `gh`:
-
-```bash
-gh workflow run orch-planner.yml --ref develop/current -f command=plan                       # dry run
-gh workflow run orch-planner.yml --ref develop/current -f command=start-batch               # approve batch (5)
-gh workflow run orch-planner.yml --ref develop/current -f command=plan -f apply=true -f dispatch_worker=true   # go
-gh workflow run orch-planner.yml --ref develop/current -f command=stop-batch                # emergency stop
-```
-
-Guards: base only `develop/current` or `orch-sandbox/*` (never `main`, no prod secrets in orch
-jobs); owner-only human actor, `github-actions[bot]` only for hops; one worker at a time
-(`concurrency: orch-worker`), state writers serialized (`orch-state`); hop counter ≤ 20; batch
-limit 5 completed / 8 attempts; issue text never reaches a shell (brief file → agent; only the
-validated issue number is interpolated); agent cannot push/merge/checkout/`gh` (post-steps do);
-forbidden paths + destructive-migration grep; GITHUB_TOKEN pushes/comments trigger no workflows
-(so no event loops) — only explicit dispatches chain.
-
-Gotchas: `workflow_dispatch` only works for workflows GitHub already knows — files on `main` or
-files that have had a run; each orch workflow therefore has a path-filtered `push` trigger whose
-job is skipped (the skipped run registers it). A *new* branch push does not match `paths`, so a
-new sandbox needs one commit that touches the workflow files. claude-code-action refuses bot
-actors unless `allowed_bots: github-actions` is set. Issue templates and `claude.yml` (@claude)
-are read from `main` only — they apply after an owner-approved main merge.
-
-### ORCH-2 owner UI
-
-Use `/orch start` / `/orch stop` on #230 or `/orch approve` on a task.
-See [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md). GitHub runs independently of chat/watchers.
+Current coordination uses the fresh evidence and checkpoint rules above and
+[PLANNER_AGENT](PLANNER_AGENT.md). Do not edit orchestration state to make an old
+mirror look current or claim a prepared workflow proves an executor ran.
