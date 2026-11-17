@@ -14,6 +14,8 @@ type Props = {
   onCancel: () => void;
   onSubmit: (protocol: ProtocolFormValue) => void;
   submitLabel: string;
+  pending?: boolean;
+  saveError?: string | null;
 };
 
 /**
@@ -23,7 +25,7 @@ type Props = {
  * (protocolConfig.ts) — при смене типа введённое не теряется; превью и protocol для
  * backend строятся из этого же draft. Backend-контракт не менялся.
  */
-export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, onSubmit, submitLabel }: Props) {
+export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, onSubmit, submitLabel, pending = false, saveError = null }: Props) {
   const [draft, setDraft] = useState<ProtocolDraft>(() => draftFromProtocol(initialProtocol));
   const patch = (changes: Partial<ProtocolDraft>) => setDraft((current) => ({ ...current, ...changes }));
 
@@ -31,13 +33,14 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
   const [previewMain, previewDetail] = previewLines(draft);
 
   function handleSubmit() {
-    if (built.ok) {
+    if (built.ok && !pending) {
       onSubmit(built.protocol);
     }
   }
 
   return (
-    <div className="ux-form">
+    <div className="ux-form" aria-busy={pending}>
+      <fieldset disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "contents" }}>
       <p className="ux-eyebrow">Упражнение</p>
       <h2 className="ux-exercise-name">{initialExerciseName}</h2>
 
@@ -123,9 +126,12 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
       </div>
 
       {!built.ok && <p className="ux-error" role="alert">{built.error}</p>}
+      {saveError && <p className="ux-error" role="alert">Не удалось сохранить: {saveError}</p>}
+      {pending && <p className="ux-helper" role="status">Сохраняем упражнение…</p>}
 
-      <button type="button" className="ux-primary" disabled={!built.ok} onClick={handleSubmit}>{submitLabel}</button>
+      <button type="button" className="ux-primary" disabled={!built.ok || pending} onClick={handleSubmit}>{submitLabel}</button>
       <button type="button" className="ux-link-button" onClick={onCancel}>Отмена</button>
+      </fieldset>
     </div>
   );
 }

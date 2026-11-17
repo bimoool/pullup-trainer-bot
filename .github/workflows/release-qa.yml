@@ -89,10 +89,18 @@ jobs:
           # remain available in staging-qa.yml, but cannot supply release evidence.
           # Raw browser failure text may contain signed launch URLs: keep it only on
           # this ephemeral runner, never publish it in logs or artifacts.
-          npx playwright test specs/06-release-v2.spec.ts specs/07-minimal-signup.spec.ts \
-            --retries=0 > "$RUNNER_TEMP/release-qa.log" 2>&1
-          result=$?
+          if npx playwright test specs/06-release-v2.spec.ts specs/07-minimal-signup.spec.ts \
+            --retries=0 > "$RUNNER_TEMP/release-qa.log" 2>&1; then
+            result=0
+          else
+            result=$?
+          fi
           echo "Release QA browser=$STAGING_PROJECT exit=$result"
+          # This separate reporter constructs an allowlisted record; raw errors stay private.
+          if [ -f test-results/release-status.json ]; then
+            cat test-results/release-status.json
+            echo
+          fi
           exit "$result"
 
       - name: Upload synthetic screenshots only (no traces, raw reports or initData)

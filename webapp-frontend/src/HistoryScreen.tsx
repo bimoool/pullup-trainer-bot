@@ -212,7 +212,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         }}
         onCloned={(date) => {
           setDetailSessionId(null);
-          journal.reload(date.slice(0, 7));
+          journal.reloadAfterLog(date);
         }}
       />
     );

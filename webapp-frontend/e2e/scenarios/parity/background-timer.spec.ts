@@ -31,7 +31,7 @@ async function installProbes(page: Page) {
   await page.addInitScript(() => {
     const probe = { wakeRequests: 0, wakeActive: 0, beepStarts: [] as number[] };
     (window as unknown as { __probe: typeof probe }).__probe = probe;
-    const sentinels: Array<EventTarget & { released: boolean }> = [];
+    const sentinels: Array<EventTarget & { released: boolean; release(): Promise<void> }> = [];
     Object.defineProperty(navigator, "wakeLock", {
       configurable: true,
       value: {

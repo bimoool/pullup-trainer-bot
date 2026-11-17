@@ -6,7 +6,8 @@ import { openAppAs } from "../fixtures/setup";
 // scripts/e2e_seed.py analytics_v2 910003 — часовой пояс Pacific/Kiritimati,
 // 205 старых сессий "Подтягиваний" (reps), смешанная (pull reps -> Бёрпи
 // interval -> pull max), time, max (новый рекорд), граничная сессия в
-// понедельник текущей ЛОКАЛЬНОЙ недели 00:30. В окне 30 дней ровно 4 сессии.
+// понедельник текущей ЛОКАЛЬНОЙ недели 00:30 (или now, если 00:30 ещё впереди).
+// В окне 30 дней ровно 4 сессии.
 const TELEGRAM_ID = 910_003;
 
 test.describe.configure({ mode: "serial" });

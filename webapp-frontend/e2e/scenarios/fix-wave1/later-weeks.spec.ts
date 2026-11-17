@@ -13,6 +13,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { ensureCourseExists } from "../../fixtures/courseSeed";
+import { buildInitData, getTestBotToken } from "../../fixtures/initData";
+import { currentPlanWeek, planWeekLabel, relativePlanWeekNumber, type CalendarPlan } from "../../fixtures/planCalendar";
 import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 
 // issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
@@ -40,7 +42,7 @@ async function onboard(page: Page) {
 // issue #304 (AD-4, §6, J12): неделя курса — одна строка = одно занятие, будущие недели видимы И стартуемы
 // (замок «Откроется <дата>» снят). #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B); каталог (3)
 // и устаревшие инклюзии не меняются.
-test("«Подтягивания»: недели 2 и 3 не пустые — 2 занятия (V5.6), будущие стартуемы", async ({ page }) => {
+test("«Подтягивания»: две следующие недели не пустые — 2 занятия (V5.6), будущие стартуемы", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, TELEGRAM_ID, { allowedApiStatuses: [404] });
   page.on("dialog", (dialog) => void dialog.accept());
   await onboard(page);
@@ -54,16 +56,51 @@ test("«Подтягивания»: недели 2 и 3 не пустые — 2 
   await page.getByRole("button", { name: "Назад" }).first().click();
   await nav(page, "Планы").click();
 
+  const readPlan = async () => {
+    const response = await page.request.get(`${BASE_URL}/api/v2/plan`, {
+      headers: { "X-Telegram-Init-Data": buildInitData({ id: TELEGRAM_ID, firstName: "E2E" }, getTestBotToken()) },
+    });
+    expect(response.ok()).toBe(true);
+    return (await response.json()).plan as CalendarPlan & {
+      plan_items: { plan_week_id: number; program_inclusion_id: number | null; count_per_week: number; occurrence_index: number | null }[];
+      program_inclusions: { id: number; program_name: string; started_at: string }[];
+    };
+  };
+  const initialPlan = await readPlan();
+  const current = currentPlanWeek(initialPlan);
+  const course = initialPlan.program_inclusions.find((inclusion) => inclusion.program_name === "Подтягивания");
+  expect(course).toBeDefined();
+  const courseStartDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(course!.started_at));
+  const courseStart = new Date(`${courseStartDay}T00:00:00Z`);
+  const courseMonday = courseStart.getTime() - ((courseStart.getUTCDay() + 6) % 7) * 86_400_000;
+  expect(Date.parse(`${current.start_date}T00:00:00Z`)).toBe(courseMonday);
+  expect(initialPlan.plan_items.filter((item) => item.plan_week_id === current.id && item.program_inclusion_id === course!.id)).toHaveLength(2);
+
   const rows = page.getByTestId("plans-row").filter({ hasText: "Подтягивания" });
   const assertCurrentWeekActionable = async () => {
+    const plan = await readPlan();
+    expect(currentPlanWeek(plan)).toEqual(current);
+    await expect(page.getByTestId("plan-week-label")).toHaveText(planWeekLabel(current));
     await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
     await expect(rows).toHaveCount(2);
     await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ }).first()).toBeVisible();
   };
   // Будущая неделя: занятия курса на месте, не пустое состояние, и их можно начать (§6).
-  const assertFutureWeekHasCourse = async (weekNumber: number) => {
-    await expect(page.getByTestId("plan-week-label")).toContainText(`Неделя ${weekNumber}`);
+  const assertFutureWeekHasCourse = async (offset: number) => {
+    const weekNumber = relativePlanWeekNumber(current, offset);
+    await expect(page.getByTestId("plan-week-label")).toContainText(`Неделя ${weekNumber} ·`);
+    const plan = await readPlan();
+    expect(currentPlanWeek(plan)).toEqual(current);
+    const week = plan.plan_weeks.find((candidate) => candidate.week_number === weekNumber);
+    expect(week).toBeDefined();
+    expect(Date.parse(`${week!.start_date}T00:00:00Z`) - Date.parse(`${current.start_date}T00:00:00Z`)).toBe(offset * 7 * 86_400_000);
+    expect((Date.parse(`${week!.start_date}T00:00:00Z`) - courseMonday) / (7 * 86_400_000) + 1).toBe(offset + 1);
+    await expect(page.getByTestId("plan-week-label")).toHaveText(planWeekLabel(week!));
+    const courseRows = plan.plan_items.filter((item) => item.plan_week_id === week!.id && item.program_inclusion_id === course!.id);
+    expect(courseRows).toHaveLength(2);
+    expect(courseRows.every((item) => item.count_per_week === 1 && item.occurrence_index !== null)).toBe(true);
+    expect(new Set(courseRows.map((item) => item.occurrence_index)).size).toBe(2);
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
     await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toHaveCount(0);
     await expect(rows).toHaveCount(2);
@@ -74,18 +111,18 @@ test("«Подтягивания»: недели 2 и 3 не пустые — 2 
   await assertCurrentWeekActionable();
 
   await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(2);
+  await assertFutureWeekHasCourse(1);
   await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(3);
+  await assertFutureWeekHasCourse(2);
 
   // После reload недели всё ещё на месте (серверное состояние, не клиентская подмена).
   await page.reload();
   await nav(page, "Планы").click();
   await assertCurrentWeekActionable();
   await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(2);
+  await assertFutureWeekHasCourse(1);
   await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(3);
+  await assertFutureWeekHasCourse(2);
 
   // Назад к текущей: ‹ ‹ — старт по-прежнему доступен.
   await page.getByRole("button", { name: "Предыдущая неделя" }).click();

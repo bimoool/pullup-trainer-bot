@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { formatSecondsAsMinutesSeconds, parseMinutesSecondsToSeconds } from "./timeInput";
 
@@ -77,13 +77,17 @@ type TimeProps = {
 };
 
 export function TimeRow({ label, hint, seconds, step = 5, min = 0, onChange }: TimeProps) {
-  const [text, setText] = useState(() => formatSecondsAsMinutesSeconds(seconds));
+  const errorId = useId();
+  const [text, setText] = useState(() => Number.isFinite(seconds) ? formatSecondsAsMinutesSeconds(seconds) : "");
   useEffect(() => {
-    if (parseMinutesSecondsToSeconds(text) !== seconds) {
+    if (Number.isFinite(seconds) && parseMinutesSecondsToSeconds(text) !== seconds) {
       setText(formatSecondsAsMinutesSeconds(seconds));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seconds]);
+
+  const parsed = parseMinutesSecondsToSeconds(text);
+  const invalid = parsed === null || parsed < min;
 
   function commit(next: number) {
     const clamped = Math.max(min, next);
@@ -98,26 +102,31 @@ export function TimeRow({ label, hint, seconds, step = 5, min = 0, onChange }: T
         {hint && <span className="ux-row-hint">{hint}</span>}
       </div>
       <div className="ux-control">
-        <button type="button" className="ux-step" aria-label={`Меньше: ${label}`} disabled={seconds <= min} onClick={() => commit(seconds - step)}>
+        <button type="button" className="ux-step" aria-label={`Меньше: ${label}`} disabled={!Number.isFinite(seconds) || seconds <= min} onClick={() => commit(seconds - step)}>
           −
         </button>
         <input
           className="ux-input ux-input-time"
           inputMode="numeric"
           aria-label={label}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? errorId : undefined}
           value={text}
           onChange={(event) => {
             setText(event.target.value);
             const parsed = parseMinutesSecondsToSeconds(event.target.value);
-            if (parsed !== null) onChange(parsed);
+            onChange(parsed ?? NaN);
           }}
-          onBlur={() => setText(formatSecondsAsMinutesSeconds(seconds))}
+          onBlur={() => {
+            if (!invalid) setText(formatSecondsAsMinutesSeconds(seconds));
+          }}
         />
-        <button type="button" className="ux-step" aria-label={`Больше: ${label}`} onClick={() => commit(seconds + step)}>
+        <button type="button" className="ux-step" aria-label={`Больше: ${label}`} onClick={() => commit((Number.isFinite(seconds) ? seconds : min) + step)}>
           +
         </button>
       </div>
       <span className="ux-unit">мин:сек</span>
+      {invalid && <span className="ux-error" id={errorId} role="alert">{label}: укажите время в формате мин:сек{min > 0 ? " больше нуля" : " (например, 01:30)"}</span>}
     </div>
   );
 }

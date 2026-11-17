@@ -36,3 +36,24 @@ exact runner on a restored copy of the production database (required before the 
 
 Rehearsal on a restored production copy done and the fix released (`1804a62`); the row diff is established
 and the verify-only path ran in production. See `REST01_RELEASE_JOURNAL_20261020.md`.
+
+
+## Same-schema runtime compatibility (2026-11-15)
+
+Strict migration completeness is not the runtime contract: onboarding can finish
+without a TrainingPlan, and existing plans support zero or multiple active
+courses, custom/manual content and owners without a completed questionnaire.
+`--verify-only` keeps the original migration check; the same-schema runner now
+uses a separate read-only `--verify-compatible` classification. A missing plan
+with any live/native/archive history or positive completed-workout counter still
+blocks. All-user history reconciliation, ownership, complete hashes, dry-run
+write detection, backup and schema guards remain required. Empty users may
+appear as WILL in legacy backfill dry-run; no proposed plan is applied.
+
+Regression evidence uses synthetic PostgreSQL and supported onboarding/plan
+APIs, including a mixed migrated-history/removed-course/empty-onboarding case.
+The old mutating-backfill negative control still changes exactly four tables
+(`training_plans`, `program_inclusions`, `plan_weeks`, `plan_items`). Preserving
+a received database does not certify a previously failed run as a new baseline;
+that state must be reconciled against the original stopped-writer snapshot, or
+recovered from the original verified backup while preserving the failed database.

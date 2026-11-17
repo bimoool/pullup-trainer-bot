@@ -18,7 +18,11 @@ REQUIRED_WORKFLOWS = {
     "codex-review": "claude-code-review.yml",
     "security": "security-review.yml",
     "rehearse": "rehearsal-harness.yml",
+    "authorization": "cloud-command-tests.yml",
 }
+# Controller authorization is path-filtered and explicitly required by adoption.
+# Ordinary release QA retains the seven contexts available on product-only PRs.
+DEFAULT_REQUIRED = tuple(name for name in REQUIRED_WORKFLOWS if name != "authorization")
 
 
 class CheckRefused(Exception):
@@ -161,8 +165,12 @@ def current_checks(api, sha):
         require(timestamp(check.get("started_at")) == started, "check/job execution time mismatch")
         if check.get("status") == "completed":
             completed = timestamp(job.get("completed_at"))
+            # GitHub can record skipped jobs as completed before started: no
+            # execution took place. Still bind both timestamps exactly; only
+            # executed jobs must have a nonnegative execution interval.
             require(
-                timestamp(check.get("completed_at")) == completed and completed >= started,
+                timestamp(check.get("completed_at")) == completed
+                and (check.get("conclusion") == "skipped" or completed >= started),
                 "check/job completion time mismatch",
             )
         key = (app["id"], run["workflow_id"], name)
@@ -225,7 +233,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sha")
     parser.add_argument(
-        "--required", nargs="+", choices=REQUIRED_WORKFLOWS, default=list(REQUIRED_WORKFLOWS)
+        "--required", nargs="+", choices=REQUIRED_WORKFLOWS, default=list(DEFAULT_REQUIRED)
     )
     args = parser.parse_args()
 

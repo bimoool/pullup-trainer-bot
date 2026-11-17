@@ -1,0 +1,37 @@
+name: Cloud controller recovery and status (independent)
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: read
+jobs:
+  recovery:
+    if: >-
+      github.repository == 'bimoool/pullup-trainer-bot' &&
+      github.event.issue.pull_request &&
+      github.event.comment.user.id == github.event.repository.owner.id &&
+      github.event.sender.id == github.event.repository.owner.id &&
+      github.event.comment.author_association == 'OWNER' &&
+      (startsWith(github.event.comment.body, '/pullup server-recover-controller ') ||
+      startsWith(github.event.comment.body, '/pullup server-controller-status '))
+    concurrency:
+      group: ${{ startsWith(github.event.comment.body, '/pullup server-controller-status ') && format('controller-status-{0}', github.event.comment.id) || 'production' }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Independent owner admission; recorded local recovery only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ secrets.PROD_GUARDED_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          HOST_KEY_SHA256: ${{ vars.VPS_HOST_KEY_SHA256 }}
+        run: python3 tools/controller_control_client.py
