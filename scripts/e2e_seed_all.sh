@@ -269,3 +269,6 @@ for id in 939901 939902; do seed golden_journey "$id"; done
 for id in 939921 939922 939931 939932; do seed golden_journey "$id"; done
 # Journal edit/clone Back during pending API response; one user per case/retry.
 for id in 939961 939962 939963 939964 939965 939966 939967 939968; do seed journal_edit "$id"; done
+
+# #421 live gesture boundary: two viewports × mouse/touch, plus natural REST; each owns its retry.
+for id in 930632 930633 930634 930635 930636 930637 930638 930639 930640 930641; do seed live_engine "$id"; done

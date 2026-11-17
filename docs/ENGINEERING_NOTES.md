@@ -1,5 +1,32 @@
 # Инженерные заметки pullup-trainer-bot
 
+## Live transport double activation #421 (2026-11-17, candidate)
+
+Built React on real FastAPI and isolated synthetic PostgreSQL reproduced a cross-phase
+gesture: the first physical click on «Готово» submits one result, then the replacement
+«Начать сейчас» occupies the same coordinates. A genuine second mouse/touch activation
+(`click.detail = 2`) sends `skip_wait` for the new REST phase. The server correctly stores
+one set and applies that separate skip; event deduplication cannot infer the user's intent.
+Single clicks and an immediate second press while IndexedDB is still saving retain REST.
+
+The live transport captures repeated clicks in the same browser gesture before a child
+control can act. This adds no cooldown or timer, preserves keyboard submission (`detail = 0`)
+and later independent activations, and leaves the durable queue and engine protocol intact.
+`live-gesture-boundary.spec.ts` uses physical same-coordinate mouse/touch input, real
+90-second REST, server logs and saved results; its read-only trace includes phase, target,
+click count, time, both button rectangles, scroll and field focus. Synthetic identities and
+their CI retries are registered in the existing seed. Chromium touch emulation establishes
+browser behavior; it does not establish native Telegram or iOS behavior. Local WebKit was
+unavailable; no new platform gate or installation is introduced.
+
+Local evidence: the four physical-gesture regressions fail on the original UI and again
+after rolling back only the fix; restoring it passes all five cases, including natural
+90-second REST, pause/reload, later intentional skip, keyboard submission and persisted
+`[5, 5]`. All 29 existing live-engine, refresh-race, narrow-screen and durable-result browser
+cases pass against real FastAPI/PostgreSQL. Production build, E2E typecheck, 34 shared vectors,
+43 fixture/clock checks and `ruff check` pass. The unchanged Python formatting baseline
+reports 456 files; this change edits no Python files. Full PR gates remain required.
+
 ## Home partial upstream failures #353/#298 (2026-11-17, candidate)
 
 `HomeScreen` previously used `Promise.all(fetchPrograms, fetchPlan)` and kept both
