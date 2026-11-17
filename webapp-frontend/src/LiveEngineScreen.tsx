@@ -857,7 +857,14 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       )}
 
       {!finishing && !reviewOpen && !extraOpen && (
-        <div className="live-transport">
+        <div className="live-transport" onClickCapture={(event) => {
+          // A double click/tap can hit a new phase's button at the same coordinates (#421).
+          // Keep one semantic action per gesture; keyboard clicks have detail=0.
+          if (event.detail > 1) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}>
           {(workInput || resultInput) && (
             <Button className="live-primary" size="l" stretched type="submit" form="engine-log-form" data-testid="engine-submit" disabled={busy || !isCompleteDecimal(value)}>
               Готово
