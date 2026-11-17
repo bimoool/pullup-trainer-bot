@@ -5,7 +5,7 @@
 От актуального `main` `869cd0d`: Vite 6.4.6, Vitest 4.1.12 и адресное обновление
 `source-map-js` 1.2.2. Полный npm audit: 9 → 0; production-only: 0 → 0.
 Чистая установка, production build, 56 unit-файлов, 34 общих вектора,
-статическая коллекция functional/staging Playwright и staging typecheck/14 platform
+functional/staging typecheck и коллекция Playwright, staging 14 platform
 contracts проходят. Продукт, схема и production-зависимости не меняются.
 Подробности совместимости и первичные advisory —
 [ENGINEERING_NOTES.md](ENGINEERING_NOTES.md#frontend-toolchain-audit-367-2026-11-17-candidate).

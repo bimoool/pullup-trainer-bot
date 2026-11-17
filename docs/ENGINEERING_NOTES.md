@@ -31,14 +31,18 @@ These are development-tool findings, not evidence of production exploitation:
 the Vite development server and frontend `node_modules` are absent from that stage.
 
 Local candidate checks: clean `npm ci`, TypeScript/Vite production build, all 56
-Node unit-test files, 34 shared vectors, functional browser collection (624 cases),
-staging typecheck/collection (38 cases) and 14 staging platform contracts pass.
+Node unit-test files, 34 shared vectors, functional typecheck/browser collection
+(624 cases), staging typecheck/collection (38 cases) and 14 staging platform
+contracts pass.
 Functional E2E typecheck on the original baseline reports the seven errors fixed
 separately by prerequisite PR #390. This branch merges that reviewed prerequisite
 normally; real API/PostgreSQL browser results must use the combined candidate SHA.
 `Dockerfile.web` builds successfully with Node 20, strict TLS and the cloud's public
 CA bundle supplied through its existing `proxy_ca` BuildKit mount. Full hosted CI
-and independent review remain required before merging this candidate.
+and independent review remain required before merging this candidate. A
+network-disabled one-shot Python check inside the built image confirms static
+`dist/index.html`, uvicorn availability, and absence of Node/frontend `node_modules`;
+the image command is the unchanged uvicorn entry point.
 
 ## Planless history compatibility (2026-11-15, source candidate)
 
