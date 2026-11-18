@@ -115,6 +115,9 @@ seed home_discovery 960006
 seed home_discovery 960007
 seed home_discovery 960008
 seed golden_journey 930001
+# J6 custom-plan journey writes to its own profile, with a separate retry profile.
+seed golden_journey 930111
+seed golden_journey 930112
 seed session_recovery 930002
 seed session_recovery 930003
 seed session_recovery 930004
