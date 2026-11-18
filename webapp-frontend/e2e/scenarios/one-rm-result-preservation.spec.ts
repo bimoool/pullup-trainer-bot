@@ -31,7 +31,7 @@ async function finishConfirmed(page: Page) {
 }
 
 test("saved confirmed 1RM text survives readiness reload and ends with the pre-screen", async ({ page }) => {
-  await openTest(page, 93520001);
+  await openTest(page, 935201);
   await finishConfirmed(page);
   // A failed write must not promote a result. The existing retry then records it once.
   await page.route("**/course/one-rep-max", (route) => route.abort(), { times: 1 });
@@ -51,7 +51,7 @@ test("saved confirmed 1RM text survives readiness reload and ends with the pre-s
 });
 
 test("stopped test preserves the existing unconfirmed copy and does not unlock weights", async ({ page }) => {
-  await openTest(page, 93520002);
+  await openTest(page, 935202);
   await reachSingle(page);
   await page.getByTestId("one-rm-speed").getByRole("button", { name: "Получилось · Обычно" }).click();
   await expect(page.getByTestId("one-rm-next")).toContainText("Подход 4 из 8");
@@ -67,7 +67,7 @@ test("stopped test preserves the existing unconfirmed copy and does not unlock w
 });
 
 test("completed test without a single preserves the no-1RM outcome", async ({ page }) => {
-  await openTest(page, 93520003);
+  await openTest(page, 935203);
   await reachSingle(page);
   await page.getByTestId("one-rm-fail").click();
   const response = page.waitForResponse((r) => r.url().endsWith("/course/one-rep-max") && r.ok());
@@ -80,7 +80,7 @@ test("completed test without a single preserves the no-1RM outcome", async ({ pa
 });
 
 test("readiness error hides the saved result; retry restores it only to the same course", async ({ page }) => {
-  await openTest(page, 93520004);
+  await openTest(page, 935204);
   await finishConfirmed(page);
   await page.route("**/api/v2/dashboard/status", (route) => route.abort(), { times: 1 });
   await page.getByTestId("one-rm-save").click();
