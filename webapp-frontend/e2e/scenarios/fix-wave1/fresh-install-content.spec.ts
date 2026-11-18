@@ -1,10 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { noWakeLock } from "../../fixtures/builderFlow";
-import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
-
-// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
-useLiveEngineV1(test);
+import { finishV2, noWakeLock, playSetsV2 } from "../../fixtures/builderFlow";
+import { openJournalEntry } from "../../fixtures/parity";
+import { openAppAs } from "../../fixtures/setup";
 
 /**
  * Fix Wave 1, #296 (FD-01/FD-06/FD-07): системный контент приезжает вместе с `alembic upgrade head`.
@@ -47,8 +45,8 @@ async function onboardThroughUi(page: Page): Promise<void> {
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();
 }
 
-async function openFreshHome(page: Page) {
-  const watchers = await openAppAs(page, freshTelegramId());
+async function openFreshHome(page: Page, liveEngine: "v1" | "v2" = "v1") {
+  const watchers = await openAppAs(page, freshTelegramId(), { liveEngine });
   await onboardThroughUi(page);
   return watchers;
 }
@@ -136,5 +134,55 @@ test("новый пользователь: готовая тренировка �
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   await expect(page.getByText("Живая тренировка", { exact: false }).first()).toBeVisible();
 
+  expect(apiFailures).toEqual([]);
+});
+
+test("J3: W-лесенка проводит 17 подходов по рецепту и сохраняет их в Журнале", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { consoleErrors, apiFailures } = await openFreshHome(page, "v2");
+  const title = "W-лесенка";
+  const targets = [5, 4, 3, 2, 1, 2, 3, 4, 5, 4, 3, 2, 1, 2, 3, 4, 5];
+  const recipe = `${targets.join("-")} · отдых 0:10`;
+  await page.getByTestId("system-workouts").getByRole("button", { name: title }).click();
+  await expect(page.getByTestId("workout-detail-items")).toContainText(recipe);
+  await page.getByTestId("workout-detail-start").click();
+  await expect(page.getByText("Готовы к старту", { exact: true })).toBeVisible();
+  await expect(page.getByText(recipe, { exact: false })).toBeVisible();
+
+  const started = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v2/sessions/live") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  const response = await started;
+  expect(response.ok()).toBe(true);
+  const session = await response.json();
+  expect(session.engine_version).toBe(2);
+  expect(session.engine.plan.blocks).toHaveLength(1);
+  const sets: { target: number; rest_after_seconds: number | null }[] = session.engine.plan.blocks[0].sets;
+  expect(sets.map((set) => [set.target, set.rest_after_seconds])).toEqual(
+    targets.map((target, index) => [target, index < targets.length - 1 ? 10 : null]),
+  );
+
+  const phase = page.getByTestId("engine-phase");
+  for (const [index, target] of targets.entries()) {
+    await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+    if ((await phase.textContent())?.trim() !== "Пошёл") {
+      await page.getByTestId("engine-skip").click();
+    }
+    await expect(phase).toHaveText("Пошёл");
+    await expect(page.getByTestId("engine-target")).toHaveText(`Подход ${index + 1}/17 · Цель: ${target} повт.`);
+    await playSetsV2(page, [String(target)]);
+  }
+  await finishV2(page);
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Журнал", exact: true }).click();
+  const entry = page.getByTestId("journal-card").filter({ hasText: title });
+  await expect(entry).toHaveCount(1);
+  await openJournalEntry(page, entry);
+  const sequence = targets.join(" · ");
+  await expect(page.getByText(`План: ${sequence}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Факт: ${sequence}`, { exact: true })).toBeVisible();
+  expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
