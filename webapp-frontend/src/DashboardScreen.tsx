@@ -1078,6 +1078,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             const todayOccurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
             const todayRestUntil = todayOccurrence === null ? null : restBlockedUntil(todayOccurrence, plan.spacing, plan.today ?? localToday());
             const todayStartable = todayOccurrence === null || canStartOccurrence(todayOccurrence, todayRestUntil);
+            const recipe = group.items.length === 1 ? group.items[0].workout_prescription : null;
             return (
               <div key={group.key} className="plans-row-main" data-testid="plans-today-row" data-done={todayDone} style={groupTint(group)}>
                 <span className="plans-row-bar" aria-hidden="true" />
@@ -1086,6 +1087,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   <span className="plans-row-chip" data-done={todayDone}>
                     {`${counter.done}/${counter.planned}`}
                   </span>
+                  {recipe && <span className="plans-row-recipe block-subtitle">{recipe}</span>}
                 </div>
                 {!todayStartable ? null : todayDone ? (
                   <button
@@ -1164,6 +1166,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               // #288 — имя для скринридера: название + день (одинаковые названия в разные дни различимы).
               const rowDay = group.items[0]?.day_of_week ?? null;
               const rowDone = counter.planned > 0 && counter.done >= counter.planned;
+              const recipe = group.items.length === 1 ? group.items[0].workout_prescription : null;
               const rowLabel = `${group.title}, ${rowDay === null ? "без дня" : (DAY_NAMES[rowDay] ?? `день ${rowDay}`).toLowerCase()}`;
               return (
                 <div key={group.key} className="plan-week-day-group plans-row" data-testid="plans-row" data-done={rowDone} style={groupTint(group)}>
@@ -1174,6 +1177,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       <span className="plans-row-chip" data-done={rowDone} data-testid="plan-item-counter">
                         {`${counter.done}/${counter.planned}`}
                       </span>
+                      {recipe && <span className="plans-row-recipe block-subtitle">{recipe}</span>}
                       {stateLabel !== null && (
                         <span className="plans-row-scheduled block-subtitle" data-testid="plans-row-state" data-state={occurrence?.state ?? ""}>
                           {stateLabel}

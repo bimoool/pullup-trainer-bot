@@ -511,6 +511,7 @@ export interface PlanItemResponseV2 {
   /** Phase B2 gate fix (issue #215) — Workout title (Complex.name), не
    * Exercise.name — только для complex-based PlanItem. */
   complex_name: string | null;
+  workout_prescription?: string | null;
   /** Phase D2/D3 (issue #188) — "user"|"system"|null (нет complex_id
    * вовсе). Решает, показывать ли "Редактировать тренировку" на
    * карточке (только для user Workout). owner_user_id намеренно не
