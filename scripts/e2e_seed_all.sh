@@ -120,6 +120,9 @@ seed golden_journey 930001
 # J6 custom-plan journey writes to its own profile, with a separate retry profile.
 seed golden_journey 930111
 seed golden_journey 930112
+# J7 direct-start and clone journey writes to separate primary and retry profiles.
+seed golden_journey 930121
+seed golden_journey 930122
 seed session_recovery 930002
 seed session_recovery 930003
 seed session_recovery 930004
