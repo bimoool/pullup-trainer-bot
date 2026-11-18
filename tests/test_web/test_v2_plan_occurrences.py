@@ -6,7 +6,7 @@
 legacy-путь и бот получают now явно. Пользователь — в поясе UTC (даты = календарные даты UTC)."""
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select, update
@@ -30,8 +30,8 @@ from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.services import live_session
+from app.web import routes as legacy_routes
 from app.web import routes_v2, routes_v2_live
-from app.web.routes import _resolve_plan_context
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
 
 MON = datetime(2026, 10, 5, 10, tzinfo=UTC)  # понедельник недели плана
@@ -158,7 +158,9 @@ async def test_get_plan_twice_creates_nothing_new(session, user: User, clock):
 # --- J11: два полных дня отдыха -----------------------------------------------------------------
 
 
-async def test_j11_monday_main_wednesday_rejected_thursday_allowed(session, user: User, clock):
+async def test_j11_monday_main_wednesday_rejected_thursday_allowed(
+    session, user: User, clock, monkeypatch
+):
     await _enrol(session, user, clock)
     occurrences = _week_items(await _plan(session, user), 1)
 
@@ -170,27 +172,49 @@ async def test_j11_monday_main_wednesday_rejected_thursday_allowed(session, user
     clock(WED)
     plan = await _plan(session, user)
     states = {i["occurrence_index"]: i for i in _week_items(plan, 1)}
-    assert states[1]["state"] == "completed" and states[1]["credited_session_id"] == started.json()["id"]
+    assert (
+        states[1]["state"] == "completed"
+        and states[1]["credited_session_id"] == started.json()["id"]
+    )
     assert states[2]["state"] == "too_early" and states[2]["available_from"] == "2026-10-08"
-    assert (states[2]["projected_date"], states[3]["projected_date"]) == ("2026-10-08", "2026-10-11")
-    assert (_summary(plan, 1)["planned"], _summary(plan, 1)["completed"], _summary(plan, 1)["infeasible"]) == (3, 1, 0)
+    assert (states[2]["projected_date"], states[3]["projected_date"]) == (
+        "2026-10-08",
+        "2026-10-11",
+    )
+    assert (
+        _summary(plan, 1)["planned"],
+        _summary(plan, 1)["completed"],
+        _summary(plan, 1)["infeasible"],
+    ) == (3, 1, 0)
 
     rejected = await _start(session, user, [states[2]["id"]])
     assert rejected.status_code == 409
     assert rejected.json()["detail"]["code"] == "too_early"
     assert rejected.json()["detail"]["available_from"] == "2026-10-08"
 
-    # legacy /api/workout/plan и бот — тот же отказ (по v2-истории)
-    context = await _resolve_plan_context(session, user.telegram_id, now=WED)
-    assert (context.status, context.available_from) == ("too_early", date(2026, 10, 8))
-    assert await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=WED) is not None
+    # HTTP-ответ legacy и текст для бота используют ту же дату из v2-истории.
+    class WednesdayClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return WED.astimezone(tz) if tz is not None else WED.replace(tzinfo=None)
+
+    monkeypatch.setattr(legacy_routes, "datetime", WednesdayClock)
+    legacy = await v2_get(session, user.telegram_id, "/api/workout/plan")
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["status"] == "too_early"
+    assert legacy.json()["available_from"] == "2026-10-08"
+    notice = await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=WED)
+    assert notice is not None
+    assert "Осталось 14 ч., можно будет тренироваться 08.10 в 00:00." in notice[0]
 
     clock(THU)
     allowed = await _start(session, user, [states[2]["id"]])
     assert allowed.status_code == 200, allowed.text
-    credited = (await session.execute(
-        select(TrainingSession.plan_item_id).where(TrainingSession.id == allowed.json()["id"]),
-    )).scalar_one()
+    credited = (
+        await session.execute(
+            select(TrainingSession.plan_item_id).where(TrainingSession.id == allowed.json()["id"]),
+        )
+    ).scalar_one()
     assert credited == states[2]["id"]
     assert await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=THU) is None
 
