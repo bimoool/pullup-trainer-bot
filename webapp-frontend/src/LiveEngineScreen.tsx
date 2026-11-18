@@ -20,6 +20,7 @@ import {
   type EngineQueue, type QueueOwner, type QueuedEngineEvent,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
+import { usePhaseSoundVolume } from "./usePhaseSoundVolume";
 import { confirmAction } from "./telegramPlatform";
 import { useBackButton } from "./useBackButton";
 import { isTextEntryTarget, useLiveFieldFocus } from "./liveFieldFocus";
@@ -78,6 +79,7 @@ function checksPayload(indexes: number[], answers: Record<number, BlockAnswers>)
  * Пауза — серверное событие (переживает reload и второе устройство).
  */
 export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onLeave, resolveExerciseName, title }: Props) {
+  const phaseSoundVolume = usePhaseSoundVolume(initDataRaw);
   const prefs = useDisplayPrefs();
   const [server, setServer] = useState<LiveSessionResponse>(initialSession);
   const [offset, setOffset] = useState(() => (initialSession.engine ? initialSession.engine.server_time_ms - Date.now() : 0));
@@ -424,12 +426,20 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       if (vibration !== null) {
         clearTimeout(vibration);
       }
+      if (document.visibilityState !== "visible") {
+        cancelScheduledPhaseEndSound();
+        return;
+      }
       const delay = phaseEndCueDelaySeconds(deadlineClientMs as number, Date.now());
       if (delay === null) {
         cancelScheduledPhaseEndSound();
         return;
       }
-      schedulePhaseEndSound(delay);
+      if (phaseSoundVolume !== null) {
+        schedulePhaseEndSound(delay, phaseSoundVolume);
+      } else {
+        cancelScheduledPhaseEndSound();
+      }
       const vibrateIn = vibrationDelayMs(deadlineClientMs as number, Date.now());
       if (vibrateIn !== null) {
         vibration = setTimeout(() => {
@@ -455,7 +465,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         clearTimeout(vibration);
       }
     };
-  }, [deadlineClientMs]);
+  }, [deadlineClientMs, phaseSoundVolume]);
 
   // Поле результата не переживает смену подхода (тот же принцип, что у движка v1, инвариант I).
   const cursorKey = state ? `${state.cursor.block_index}:${state.cursor.set_index}:${state.phase}` : "";

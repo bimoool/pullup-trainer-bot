@@ -9,6 +9,8 @@
  * троттлятся вместе с JS event loop, а `start(time)` планирует срабатывание
  * заранее на них, а не в момент вызова.
  */
+import { getSoundVolumePercent } from "./sound.ts";
+
 let audioContext: AudioContext | null = null;
 let scheduledOscillator: OscillatorNode | null = null;
 
@@ -48,9 +50,9 @@ export function phaseEndCueDelaySeconds(endsAtMs: number, nowMs: number): number
 /** Планирует короткий сигнал ровно через `secondsFromNow` секунд от вызова —
  * вызывающая сторона сама решает, что считать этим моментом (`ends_at` сервера,
  * пока фаза синхронизирована, либо локальная оценка длительности офлайн). */
-export function schedulePhaseEndSound(secondsFromNow: number): void {
+export function schedulePhaseEndSound(secondsFromNow: number, volumePercent = getSoundVolumePercent()): void {
   cancelScheduledPhaseEndSound();
-  if (secondsFromNow <= 0) {
+  if (secondsFromNow <= 0 || volumePercent <= 0) {
     return;
   }
   const ctx = getAudioContext();
@@ -61,7 +63,7 @@ export function schedulePhaseEndSound(secondsFromNow: number): void {
   oscillator.type = "sine";
   oscillator.frequency.value = 880;
   gain.gain.setValueAtTime(0, startAt);
-  gain.gain.linearRampToValueAtTime(0.3, startAt + 0.02);
+  gain.gain.linearRampToValueAtTime(0.3 * Math.min(100, volumePercent) / 100, startAt + 0.02);
   gain.gain.linearRampToValueAtTime(0, startAt + 0.35);
   oscillator.connect(gain);
   gain.connect(ctx.destination);
