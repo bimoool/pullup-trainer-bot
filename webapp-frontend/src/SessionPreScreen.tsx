@@ -126,6 +126,7 @@ type ScreenState =
   }
   | {
     phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[];
+    inclusionId: number;
     /** V5.6 §9: инклюзия, ждущая проверки восстановления (прибавки на паузе; старт разрешён), иначе null. */
     recoveryCheckInclusionId: number | null;
   }
@@ -195,6 +196,18 @@ export function SessionPreScreen({
   const [conflictKind, setConflictKind] = useState<ActiveConflictKind>("continue");
   // N3 (#293): «Повторить» в фазе error без старта — перезапуск загрузки готовности.
   const [reloadKey, setReloadKey] = useState(0);
+  // The setup form can disappear after its save refresh. Keep its existing result copy on this pre-screen.
+  const resultContext = JSON.stringify([initDataRaw, manual, workoutId, explicitPlanItemIds]);
+  const [oneRepMaxResult, setOneRepMaxResult] = useState<{ context: string; inclusionId: number; message: string } | null>(null);
+  const resultInclusionId = state.phase === "course_setup" || state.phase === "ready_step" ? state.inclusionId : null;
+  const resultMessage = oneRepMaxResult?.context === resultContext && oneRepMaxResult.inclusionId === resultInclusionId
+    ? oneRepMaxResult.message : null;
+  const resultNotice = resultMessage !== null
+    ? <p className="live-plan" data-testid="one-rm-result">{resultMessage}</p> : null;
+  useEffect(() => {
+    setOneRepMaxResult((saved) => saved !== null && (saved.context !== resultContext
+      || (resultInclusionId !== null && saved.inclusionId !== resultInclusionId)) ? null : saved);
+  }, [resultContext, resultInclusionId]);
   // Сводка — необязательная подсказка: любой сбой молча оставляет экран без неё.
   const [summary, setSummary] = useState<PreSummary | null>(null);
   // Аудит staging 7500c37: старая строка «только упражнение» не хранит подходов/повторений — старт подставлял
@@ -309,6 +322,7 @@ export function SessionPreScreen({
         if (data.status === "ready" && data.block_a && data.block_b) {
           setState({
             phase: "ready_step", blockA: data.block_a, blockB: data.block_b, programName: data.program_name,
+            inclusionId: data.program_inclusion_id ?? inclusion.id,
             planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
             recoveryCheckInclusionId: data.course_recovery_check_required ? data.program_inclusion_id ?? null : null,
           });
@@ -546,11 +560,18 @@ export function SessionPreScreen({
         <p className="screen-message">
           Для следующей тренировки программы не хватает данных: {describePendingInputs(state.missing)}.
         </p>
+        {resultNotice}
         {state.inclusionId !== null && (
           <CourseSetupForm
+            key={`${resultContext}:${state.inclusionId}`}
             initDataRaw={initDataRaw} inclusionId={state.inclusionId} missing={state.missing}
             assistancePending={state.assistancePending}
-            onSaved={() => setReloadKey((key) => key + 1)}
+            onSaved={(message) => {
+              if (message !== undefined && state.inclusionId !== null) {
+                setOneRepMaxResult({ context: resultContext, inclusionId: state.inclusionId, message });
+              }
+              setReloadKey((key) => key + 1);
+            }}
           />
         )}
         {state.inclusionId !== null && state.recoveryCheck && (
@@ -628,6 +649,7 @@ export function SessionPreScreen({
     <div className="pre-screen" data-testid="session-pre">
       <BackChevron testId="session-pre-back" onClick={onGoToWorkout} />
       <PreHeader title={displayTitle} />
+      {resultNotice}
       {summary !== null && (
         <>
           <p className="pre-meta" data-testid="session-pre-meta">{summary.meta}</p>
