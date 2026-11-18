@@ -67,7 +67,15 @@ from app.domain.program_schedule import (
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.pullups_v5 import is_v5_state
 from app.domain.training_session_v2 import effective_duration_seconds
-from app.domain.workout_definition import WorkoutContentError, content_hash, normalize, to_dict
+from app.domain.workout_definition import (
+    BlockSource,
+    WorkoutContentError,
+    content_hash,
+    describe,
+    describe_rest,
+    normalize,
+    to_dict,
+)
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.live_session import (
@@ -222,6 +230,7 @@ def _plan_item_response(
     item: PlanItem, complex_name_by_id: dict[int, str] | None = None,
     complex_source_type_by_id: dict[int, str] | None = None, done_count: int = 0,
     view: PlanItemView | None = None,
+    *, workout_prescription: str | None = None,
 ) -> PlanItemResponse:
     state = view.state if view is not None else None
     return PlanItemResponse(
@@ -239,6 +248,7 @@ def _plan_item_response(
         week_phase=item.week_phase.value if item.week_phase is not None else None,
         program_inclusion_id=item.program_inclusion_id, plan_week_id=item.plan_week_id,
         complex_name=(complex_name_by_id or {}).get(item.complex_id) if item.complex_id is not None else None,
+        workout_prescription=workout_prescription,
         complex_source_type=(
             (complex_source_type_by_id or {}).get(item.complex_id) if item.complex_id is not None else None
         ),
@@ -1069,6 +1079,27 @@ async def get_plan(
         plan=plan, user=user, today=plan_today, plan_weeks=plan_weeks, plan_items=plan_items,
         inclusions=inclusions,
     )
+    standalone_system_workouts = {
+        item.id: item.complex_id
+        for row in view.items
+        if (item := row.item).program_inclusion_id is None
+        and item.complex_id is not None
+        and complex_source_type_by_id.get(item.complex_id) == "system"
+    }
+    versions = await WorkoutDefinitionRepository(session).current_versions(
+        sorted(set(standalone_system_workouts.values())),
+    )
+    recipe_by_workout_id: dict[int, str] = {}
+    for workout_id, version in versions.items():
+        blocks = version.content.blocks
+        if len(blocks) == 1 and blocks[0].source is BlockSource.STATIC:
+            block = blocks[0]
+            description, rest = describe(block), describe_rest(block)
+            recipe_by_workout_id[workout_id] = f"{description} · {rest}" if rest else description
+    recipe_by_item_id = {
+        item_id: recipe_by_workout_id.get(workout_id)
+        for item_id, workout_id in standalone_system_workouts.items()
+    }
     access_levels = await _inclusion_access_levels(session, inclusions)
     return PlanResponse(
         plan=TrainingPlanResponse(
@@ -1080,6 +1111,7 @@ async def get_plan(
             plan_items=[
                 _plan_item_response(
                     item_view.item, complex_name_by_id, complex_source_type_by_id, item_view.done_count, item_view,
+                    workout_prescription=recipe_by_item_id.get(item_view.item.id),
                 )
                 for item_view in view.items
             ],

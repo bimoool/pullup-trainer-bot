@@ -304,6 +304,8 @@ class PlanItemResponse(BaseModel):
     # Опционально, None для call site'ов, не резолвящих его (не всем
     # нужно на каждый PlanItem-запрос — только листингу на "Планах").
     complex_name: str | None = None
+    # Краткий рецепт самостоятельной системной тренировки из её версии v2.
+    workout_prescription: str | None = None
     # Phase D2 (issue #188) — "user"|"system"|None (нет complex_id вовсе).
     # Нужен frontend, чтобы решить, показывать ли "Редактировать
     # тренировку" на карточке (только для user Workout, не system).

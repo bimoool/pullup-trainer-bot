@@ -161,6 +161,14 @@
   white-space: nowrap;
 }
 
+.plans-row-recipe {
+  flex-basis: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .plans-row-chip {
   flex: 0 0 auto;
   padding: 2px 8px;
