@@ -83,7 +83,7 @@ const SPEEDS: { value: "fast" | "normal" | "slow"; label: string }[] = [
 export function OneRepMaxTest(
   { initDataRaw, inclusionId, onSaved, missing = [], typed = {} }:
   {
-    initDataRaw: string; inclusionId: number; onSaved: () => void;
+    initDataRaw: string; inclusionId: number; onSaved: (result: string) => void;
     /** Недостающие входы по серверу и введённое в форме, но ещё не сохранённое (масса тела, шаг веса). */
     missing?: string[]; typed?: Record<string, string>;
   },
@@ -145,8 +145,9 @@ export function OneRepMaxTest(
     setError(null);
     try {
       const saved = await postOneRepMax(initDataRaw, inclusionId, attempts, stopped);
-      setResult(describeOneRepMaxOutcome(saved.one_rep_max));
-      onSaved();
+      const message = describeOneRepMaxOutcome(saved.one_rep_max);
+      setResult(message);
+      onSaved(message);
     } catch (e) {
       setError(describeCourseError(e, "сохранить тест"));
     } finally {
@@ -213,7 +214,6 @@ export function OneRepMaxTest(
           </Button>
         </div>
       )}
-      {result !== null && <p className="live-plan" data-testid="one-rm-result">{result}</p>}
       {error !== null && <p className="live-hint" role="alert" data-testid="one-rm-error">{error}</p>}
     </Section>
   );
@@ -223,7 +223,7 @@ export function CourseSetupForm(
   { initDataRaw, inclusionId, missing, assistancePending = [], onSaved }:
   {
     initDataRaw: string; inclusionId: number; missing: string[]; assistancePending?: AssistancePending[];
-    onSaved: () => void;
+    onSaved: (oneRepMaxResult?: string) => void;
   },
 ) {
   const [numbers, setNumbers] = useState<Record<string, string>>({});
