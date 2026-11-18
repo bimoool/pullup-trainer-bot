@@ -41,6 +41,7 @@ import {
 } from "./offlineSession";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
+import { usePhaseSoundVolume } from "./usePhaseSoundVolume";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialog";
 import { V1_FINISH_HINT, canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
@@ -105,6 +106,7 @@ const PHASE_LABELS: Record<LocalPhaseName, string> = {
 export function SessionLiveScreen({
   initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate, onLeave,
 }: Props) {
+  const phaseSoundVolume = usePhaseSoundVolume(initDataRaw);
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -363,11 +365,19 @@ export function SessionLiveScreen({
     }
     function schedule() {
       cancelVibration();
+      if (document.visibilityState !== "visible") {
+        cancelScheduledPhaseEndSound();
+        return;
+      }
       const delay = phaseEndCueDelaySeconds(phaseEndsAtMs as number, Date.now());
       if (delay === null) {
         cancelScheduledPhaseEndSound();
       } else {
-        schedulePhaseEndSound(delay);
+        if (phaseSoundVolume !== null) {
+          schedulePhaseEndSound(delay, phaseSoundVolume);
+        } else {
+          cancelScheduledPhaseEndSound();
+        }
         const vibrateIn = vibrationDelayMs(phaseEndsAtMs as number, Date.now());
         if (vibrateIn !== null) {
           vibrationTimer = setTimeout(() => {
@@ -397,7 +407,7 @@ export function SessionLiveScreen({
       cancelScheduledPhaseEndSound();
       cancelVibration();
     };
-  }, [phaseEndsAtMs]);
+  }, [phaseEndsAtMs, phaseSoundVolume]);
 
   // issue #202/#310 (integration review, H1) — useBackButton должен
   // вызываться безусловно, до любого раннего return: изначально стоял
