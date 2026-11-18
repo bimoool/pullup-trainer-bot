@@ -5,6 +5,7 @@ synthetic J2/convergence check. It does **not** complete Wave 4 acceptance or cu
 [#309](https://github.com/bimoool/pullup-trainer-bot/issues/309) and
 [#302](https://github.com/bimoool/pullup-trainer-bot/issues/302) remain open.
 No application, migration, flag, v1 path or release guard changes are included.
+The follow-ups add three acceptance tests with separate evidence limits.
 
 ## Source and evidence labels
 
@@ -48,7 +49,7 @@ PR #430 head `0dede8f003e85a1bb79b91d0218d4da4e94be8ff`:
 | [Fresh WebKit synthetic diagnosis](https://github.com/bimoool/pullup-trainer-bot/actions/runs/44239658919/job/134584174545) | Exit 0 on first attempt; `release-status.schema1`, `fresh-course`, `iphone-webkit`, `passed` | Synthetic browser evidence, not a physical iPhone/Telegram/watch result |
 | [Native Codex source review](https://github.com/bimoool/pullup-trainer-bot/actions/runs/44239762835/job/134584574081) | Success, completed with no findings | Source review, not native device QA |
 
-No backend or frontend full suite was rerun for this docs-only task. Current report
+No backend or frontend full suite was rerun for the original report-only task. Current report
 PR documentation checks and final integration review are separate integration work.
 
 ## Journey-to-test mapping and remaining cells
@@ -61,7 +62,7 @@ fresh/aged acceptance cells remain UNKNOWN in this report.**
 | Journey / accepted observation | Existing source anchors | This checkpoint and concrete missing acceptance |
 |---|---|---|
 | J1: onboarding, 7-day trial, free course, prescription, plan/live/history/analytics/reopen | [Trial service](../../tests/test_services/test_onboarding_trial_guarantee.py); [free access API](../../tests/test_web/test_free_program_access.py); [V5.6 API](../../tests/test_web/test_v2_course_v5.py) `test_new_inclusion_uses_v5_6_rule_and_records_provenance`; [V5.6 E2E](../../webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts); [golden Builder E2E](../../webapp-frontend/e2e/scenarios/golden-journey.spec.ts) | SOURCE_ONLY + EXISTING_CI. The Builder journey is not the course journey. Still need a paired course trace proving all specified counts, categories, measured rounded minutes and reopen consistency; R UNKNOWN. |
-| J2: aged state converges without history/entitlement loss; repeat is zero | [Plan convergence](../../tests/test_services/test_plan_convergence_v2.py) `test_aged_profile_converges_and_preserves_history`, `test_run_all_second_apply_has_zero_mutations`; [single-history rehearsal](../../tests/test_scripts/test_single_history_migration.py) `test_aged_database_converges_idempotently_without_touching_legacy_history`; [aged runtime repair](../../tests/test_services/test_aged_state_convergence.py) | TARGETED_PASS for the named plan/legacy modules and single direct rehearsal below; **partial J2**, not whole J2 PASS. Missing paired same-history fresh equivalence and Journal/Profile/Analytics totals across all aged personas, including expired/payer, mixed history, archived/deleted definitions and mid-session. |
+| J2: aged state converges without history/entitlement loss; repeat is zero | [Plan convergence](../../tests/test_services/test_plan_convergence_v2.py) `test_aged_profile_converges_and_preserves_history`, `test_run_all_second_apply_has_zero_mutations`; [single-history rehearsal](../../tests/test_scripts/test_single_history_migration.py) `test_aged_database_converges_idempotently_without_touching_legacy_history`; [aged runtime repair](../../tests/test_services/test_aged_state_convergence.py) | TARGETED_PASS for the named plan/legacy modules and single direct rehearsal below; **partial J2**, not whole J2 PASS. The follow-up paired regression below establishes current/future **plan** equivalence for one legacy representation pair. Journal/Profile/Analytics totals and the wider persona matrix, including expired/payer, mixed history, archived/deleted definitions and mid-session, remain UNKNOWN. |
 | J3: exact 17-target W-ladder, order/rest, persistence and Journal labels | [Workout domain](../../tests/test_workout_definition.py) `test_w_ladder_is_17_explicit_sets_in_exact_order`; [API](../../tests/test_web/test_v2_workout_definition.py) `test_w_ladder_detail_and_catalog_show_explicit_sequence`; [Builder execution](../../webapp-frontend/e2e/scenarios/builder-execution.spec.ts) covers protocol execution | SOURCE_ONLY. Generic Builder E2E is not proof of the exact W-ladder journey. Full 17-set live → persisted targets → Journal sequence and all surfaces' labels not established here. |
 | J4: legacy 4 working + max persistence; current V5.6 exact recipes | [Legacy prescription domain](../../tests/test_course_prescription.py); [legacy API](../../tests/test_web/test_v2_course_prescription.py); [V5.6 golden examples](../../tests/test_pullups_v5.py) `test_m0_assisted_example`, `test_m10_qualifies_immediately_with_transition_volume`, `test_m25_example`, `test_m50_start_cap_only`; [course engine](../../tests/test_web/test_v2_course_v5_engine.py); [course E2E](../../webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts) | SOURCE_ONLY. Keep version boundaries explicit. The B continuation E2E is conditional on `E2E_JOURNEY_TG`; aggregate green CI does not prove that conditional continuation ran. All golden profiles' end-to-end persistence not established here. |
 | J5: automatic deadlines, background return, pause/reload and audio offsets | [Shared vectors](../../tests/test_live_engine_vectors.py); [engine API](../../tests/test_web/test_v2_live_engine.py); [offline reopen](../../tests/test_web/test_v2_live_engine_offline_reopen.py); [engine E2E](../../webapp-frontend/e2e/scenarios/live-engine-v2.spec.ts), deadline/background/pause cases | SOURCE_ONLY + EXISTING_CI. Physical background return at ±1 s and audible/on-device offsets remain UNKNOWN; no watch proof. |
@@ -118,7 +119,7 @@ python -c 'from tests.test_scripts.test_single_history_migration import test_age
 
 The output summary above is sufficient public evidence; raw local logs and
 synthetic fixture rows are not published. No genuine invariant failure occurred,
-so no application repair or new test was needed.
+so the original report-only checkpoint needed no application repair or new test.
 
 ## Migration-clause disposition and remaining acceptance
 
@@ -126,7 +127,7 @@ so no application repair or new test was needed.
 |---|---|---|
 | §3 deterministic backfill and apply-again zero | TARGETED_PASS for the selected history runner; plan runtime PASS | No claim that every backfill ambiguity/type or migration was separately rerun |
 | §4 single canonical history / legacy dual-write | TARGETED_PASS for six service tests and the direct aged rehearsal | Cross-view Journal/Profile/Analytics totals across all personas and cutover readiness still UNKNOWN |
-| §5 aged plan convergence / history credits | TARGETED_PASS for eight plan service tests | Complete fresh-equivalence for the same events across the rehearsal persona set still UNKNOWN |
+| §5 aged plan convergence / history credits | TARGETED_PASS for eight plan service tests | One paired same-event current/future plan regression now passes (follow-up below); the full rehearsal persona set remains UNKNOWN |
 | §6 in-flight v1 and cached old clients | SOURCE_ONLY contract; NOT_TESTED in this task | Old bundle/offline queues, active v1 completion at cutover, new v2 starts; keep v1 until separate acceptance |
 | §7 subscription/access preservation | TARGETED_PASS for exact fixture fingerprints/cache/access assertions | Not a global audit of all campaign migration writes or all entitled accounts; full persona before/after comparison still required |
 | §8 rehearsal and rollback | Partial synthetic migration/convergence PASS only | No production-shaped dump used, no restore drill, no staging cutover or flag change; mandatory full rehearsal remains incomplete |
@@ -139,3 +140,64 @@ native/admin capabilities. This report neither authorizes nor performs productio
 migration, deploy, rollback, freeze/retirement, legacy queue work, account changes,
 credential provisioning or paid messages. Wave 4 sign-off and issue closure remain
 separate decisions after their actual evidence is complete.
+
+
+## Follow-up: paired current/aged plan representation (#309)
+
+Source base: `047c9c5a0207e422be971c157a4ea359b2f4a37d`, fetched after
+PR #431 integrated the report above. Application source is unchanged from the
+original examined head. This follow-up adds one acceptance regression,
+[test_plan_fresh_aged_equivalence.py](../../tests/test_services/test_plan_fresh_aged_equivalence.py),
+and narrows one J2 evidence gap; it is test maintenance, not a reproduced bugfix.
+
+Both synthetic UTC users share one free Program and STEP strategy profile and
+explicitly enroll in `pullups_legacy_step` with the same inputs and frozen
+prescription. Both replay identical full nine-set planned sessions via the real
+API on Monday October 5 and Thursday October 8, completing 40 minutes after each
+start. Direct start/completion clocks and plan clocks are fixed. The legacy
+program version is deliberate; this does not reinterpret new V5.6 prescriptions.
+
+After replay, one fixture retains current occurrence storage. Only the other's
+current-week representation is reconstructed as the documented old A+B aggregates
+(`count_per_week = 3`), M2M credits and absent derived inclusion fields. Its
+canonical session contents, blocks, targets, logs, prescription snapshots and
+progression are retained. This is **representation convergence after identical
+API replay**; it does not replay historical writers, migrate progression or assert
+that past aggregate display must equal current occurrence display.
+
+The regression executes the same convergence through Friday and the next week
+for each profile and compares every returned occurrence business field after
+replacing row, owner, week and credit-session IDs with their semantic week/event
+keys. It compares all weekly summaries and spacing, inclusion status, sequence
+cursor, completed-main count and last-main time. Literal expectations guard the
+comparison: current week 3 planned/2 completed; next week 3/0; each completed
+occurrence credits its corresponding event; next permitted main date October 11;
+status active, cursor/count 2 and last main October 8. Both second convergences
+report zero mutations.
+
+Per-owner before/after fingerprints cover every session column except the
+explicitly repairable `plan_item_id`, plus complete block/target/log rows.
+Frozen inclusion snapshots, initial/progressed state, provenance, start time and
+progression revision remain exact per owner; both profiles' snapshot and
+progression values also match. Target/log/block content is compared across users
+with only identifiers and creation timestamps omitted. Subscription cache and
+program access are preserved. Retired aggregates retain their identities.
+
+Actual command, on one new uniquely named owned synthetic PostgreSQL target:
+
+```bash
+python -m pytest -q tests/test_services/test_plan_fresh_aged_equivalence.py tests/test_services/test_plan_convergence_v2.py::test_aged_profile_converges_and_preserves_history tests/test_services/test_plan_convergence_v2.py::test_aged_profile_current_and_future_plan_stays_functional
+```
+
+**Result: 3 passed in 9.05 s, no skips, exit 0 on the first execution.** The two
+adjacent existing tests check the preservation and aged-plan behavior that the
+paired fixture extends. Targeted Ruff check/format passed. The local PostgreSQL
+and Redis host assertions, existing shared-default check and per-target URL
+overrides described above were repeated. The owned target was dropped only after
+ownership and zero-client assertions, without FORCE or session termination.
+
+This establishes TARGETED_PASS for this specific paired **plan** representation
+cell. It does not complete J2, paired cross-view Journal/Profile/Analytics totals,
+expired/payer and other aged personas, V5.6 acceptance, in-flight old clients,
+rehearsal/restore, native Telegram/device/audio/watch proof or J1–J12 as a whole.
+Full CI and independent review of this separate draft PR remain integration gates.
