@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openJournalEntry, openTab, selectMetric, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
+import { pressTelegramBackButton } from "../../fixtures/telegramMock";
 
 // Crimpd parity — Journal log (#263). Moved out of crimpd-parity.spec.ts into its own file
 // (scenarios/parity/README.md) so parallel parity tasks do not conflict on one shared tail.
@@ -25,8 +26,8 @@ for (const width of WIDTHS) {
     test.use({ viewport: { width, height: 800 } });
     test.setTimeout(90_000);
 
-    test("шторка → свободная активность и тренировка из моих появляются в Журнале и Аналитике", async ({ page }, testInfo) => {
-      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme });
+    test("Журнал: после правки запись остаётся в истории тренировки, Аналитика учитывает новые повторы", async ({ page }, testInfo) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme, backButton: true });
       await openTab(page, "Журнал");
       const yesterday = localDateOffset(-1);
       const tomorrow = localDateOffset(1);
@@ -93,10 +94,17 @@ for (const width of WIDTHS) {
       await page.getByTestId("log-effort-4").click();
       await page.getByTestId("log-note").fill("без таймера");
       await expectNoHorizontalOverflow(page, "Журнал: форма тренировки");
+      const posted = page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v2/sessions",
+      );
       await page.getByTestId("log-save").click();
+      const response = await posted;
+      expect(response.ok()).toBe(true);
+      const recorded: { id: number; workout_id: number } = await response.json();
 
       const backdatedCard = cards.filter({ hasText: "Записана задним числом" });
       await expect(backdatedCard).toHaveCount(1);
+      await expect(backdatedCard).toContainText("Золотая тренировка");
       // карточка — суммы (#286): 2 подхода, 15 повторов, усилие 4; факт по подходам «8 · 7» — в деталях записи
       await expect(backdatedCard.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
       await expect(backdatedCard.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("15");
@@ -108,14 +116,55 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("journal-workout-comment")).toContainText("без таймера");
       await page.getByRole("button", { name: "← Назад" }).click();
 
+      // J8: действия принадлежат той же записи, а правка сохраняется по её ID.
+      await backdatedCard.click();
+      await expect(page.getByTestId("journal-sheet-clone")).toBeVisible();
+      await expect(page.getByTestId("journal-sheet-workout")).toBeVisible();
+      await page.getByTestId("journal-sheet-edit").click();
+      const form = page.getByTestId("journal-edit-form");
+      const secondSet = form.getByLabel("Подход 2: значение");
+      await expect(secondSet).toHaveValue("7");
+      await secondSet.fill("12");
+      const saved = page.waitForResponse((response) =>
+        response.request().method() === "PATCH"
+        && new URL(response.url()).pathname === `/api/v2/sessions/${recorded.id}`,
+      );
+      await form.getByRole("button", { name: "Сохранить" }).click();
+      expect((await saved).ok()).toBe(true);
+      await expect(form).toHaveCount(0);
+      await expect(cards).toHaveCount(2);
+      await expect(backdatedCard.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("20");
+
+      await openJournalEntry(page, backdatedCard);
+      await expect(page.getByText("Факт: 8 · 12")).toBeVisible();
+      const history = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname === `/api/v2/workouts/${recorded.workout_id}/sessions`,
+      );
+      await page.getByTestId("journal-open-workout").click();
+      const historyResponse = await history;
+      expect(historyResponse.ok()).toBe(true);
+      const workoutHistory: { sessions: { id: number }[] } = await historyResponse.json();
+      expect(workoutHistory.sessions.map((session) => session.id)).toEqual([recorded.id]);
+      await expect(page.getByTestId("workout-detail-title")).toHaveText("Золотая тренировка");
+      await expect(page.getByTestId("workout-detail-history-row")).toHaveCount(1);
+      await pressTelegramBackButton(page);
+      await expect(page.getByTestId("journal-open-workout")).toBeVisible();
+      await page.getByRole("button", { name: "← Назад" }).click();
+
       // Аналитика: обе записи — тренировки, минуты считаются только по свободной активности.
       await openTab(page, "Аналитика");
-      const card = page.getByTestId("analytics-metrics");
       const total = page.getByTestId("analytics-metric-total");
       await expect(total).toContainText("Всего тренировок: 2");
       await selectMetric(page, "Минуты");
       await expect(total).toContainText("Всего минут: 1 ч 15 мин");
       await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
+      await page.locator(".analytics-exercise-picker").getByRole("button", { name: "Подтягивания", exact: true }).click();
+      const reps = page.locator('.analytics-panel[data-protocol="reps_sets"]');
+      await expect(reps.locator(".analytics-stat").filter({ hasText: "Всего повторений" }).locator(".analytics-stat-value"))
+        .toHaveText("20");
+      await expect(reps.locator(".analytics-stat").filter({ hasText: "Лучший подход" }).locator(".analytics-stat-value"))
+        .toHaveText("12");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
