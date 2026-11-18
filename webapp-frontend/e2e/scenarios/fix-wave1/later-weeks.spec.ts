@@ -12,13 +12,11 @@
 // (no-op once the course ships with migrations).
 import { expect, test, type Page } from "@playwright/test";
 
+import { finishV2, playSetsV2 } from "../../fixtures/builderFlow";
 import { ensureCourseExists } from "../../fixtures/courseSeed";
 import { buildInitData, getTestBotToken } from "../../fixtures/initData";
 import { currentPlanWeek, planWeekLabel, relativePlanWeekNumber, type CalendarPlan } from "../../fixtures/planCalendar";
-import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
-
-// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
-useLiveEngineV1(test);
+import { openAppAs } from "../../fixtures/setup";
 
 const TELEGRAM_ID = 7_900_000 + (Date.now() % 90_000);
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";
@@ -42,7 +40,8 @@ async function onboard(page: Page) {
 // issue #304 (AD-4, §6, J12): неделя курса — одна строка = одно занятие, будущие недели видимы И стартуемы
 // (замок «Откроется <дата>» снят). #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B); каталог (3)
 // и устаревшие инклюзии не меняются.
-test("«Подтягивания»: четыре следующие недели видны с двумя занятиями V5.6 и кнопками старта", async ({ page }) => {
+test("J12: четыре будущие недели доступны, выполнение засчитывается только выбранному занятию +4", async ({ page }) => {
+  test.setTimeout(90_000);
   const { apiFailures } = await openAppAs(page, TELEGRAM_ID, { allowedApiStatuses: [404] });
   page.on("dialog", (dialog) => void dialog.accept());
   await onboard(page);
@@ -62,7 +61,10 @@ test("«Подтягивания»: четыре следующие недели
     });
     expect(response.ok()).toBe(true);
     return (await response.json()).plan as CalendarPlan & {
-      plan_items: { plan_week_id: number; program_inclusion_id: number | null; count_per_week: number; occurrence_index: number | null }[];
+      plan_items: {
+        id: number; plan_week_id: number; program_inclusion_id: number | null;
+        count_per_week: number; occurrence_index: number | null; credited_session_id: number | null;
+      }[];
       program_inclusions: { id: number; program_name: string; started_at: string }[];
     };
   };
@@ -127,8 +129,54 @@ test("«Подтягивания»: четыре следующие недели
   await assertCurrentWeekActionable();
   await visitFutureWeeks();
 
-  // Назад к текущей: старт по-прежнему доступен.
+  // Стартуем ровно одно занятие из недели +4 через обычный экран плана.
+  const before = await readPlan();
+  const future = before.plan_weeks.find((week) => week.week_number === relativePlanWeekNumber(current, 4))!;
+  const courseRows = before.plan_items.filter((item) => item.program_inclusion_id === course!.id);
+  expect(courseRows).toHaveLength(10);
+  expect(courseRows.every((item) => item.credited_session_id === null)).toBe(true);
+  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+  await expect(page.getByTestId("course-setup-required")).toBeVisible();
+  await page.getByTestId("course-input-volume_capacity").fill("10");
+  await page.getByTestId("course-volume-band-name").fill("Синяя");
+  await page.getByTestId("course-volume-band-colour").fill("синяя");
+  await page.getByTestId("course-volume-band-attachment").fill("петля на перекладине");
+  await page.getByTestId("course-volume-band-position").fill("стопа");
+  await page.getByTestId("course-strength-band-bodyweight").check();
+  await page.getByTestId("course-setup-save").click();
+  await expect(page.getByText("Блок 1: 7/7/7/7+")).toBeVisible();
+
+  const started = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v2/sessions/live") && response.request().method() === "POST",
+  );
+  await nav(page, "Начать").click();
+  const startResponse = await started;
+  expect(startResponse.ok()).toBe(true);
+  const requestedIds: number[] = startResponse.request().postDataJSON().plan_item_ids;
+  expect(requestedIds).toHaveLength(1);
+  expect(courseRows.filter((item) => item.plan_week_id === future.id).map((item) => item.id)).toContain(requestedIds[0]);
+  const session: { id: number; engine_version: number } = await startResponse.json();
+  expect(session.engine_version).toBe(2);
+  await playSetsV2(page, ["7", "7", "7", "9", "5", "5", "5", "5", "6"]);
+  await finishV2(page, { checks: "valid" });
+  await nav(page, "Закрыть").click();
+  await page.reload();
+  await nav(page, "Планы").click();
+  await expect(page.getByTestId("plan-week-progress")).toHaveText("Текущая неделя · 0 из 2");
+  const after = await readPlan();
+  expect(currentPlanWeek(after)).toEqual(current);
+  const credits = new Map(after.plan_items.filter((item) => item.program_inclusion_id === course!.id)
+    .map((item) => [item.id, item.credited_session_id]));
+  expect(credits).toEqual(new Map(courseRows.map((item) => [
+    item.id, item.id === requestedIds[0] ? session.id : null,
+  ])));
+  for (const _ of futureOffsets) await nextWeek.click();
+  await expect(page.getByTestId("plan-week-label")).toHaveText(planWeekLabel(future));
+  await expect(page.getByTestId("plan-week-progress")).toHaveText("1 из 2");
+
+  // После фактического занятия отдых может закрыть старты. Проверяем недельный зачёт.
   for (const _ of futureOffsets) await previousWeek.click();
-  await assertCurrentWeekActionable();
+  await expect(page.getByTestId("plan-week-label")).toHaveText(planWeekLabel(current));
+  await expect(page.getByTestId("plan-week-progress")).toHaveText("Текущая неделя · 0 из 2");
   expect(apiFailures).toEqual([]);
 });
