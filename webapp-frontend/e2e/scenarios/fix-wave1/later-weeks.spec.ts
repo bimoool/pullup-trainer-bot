@@ -42,7 +42,7 @@ async function onboard(page: Page) {
 // issue #304 (AD-4, §6, J12): неделя курса — одна строка = одно занятие, будущие недели видимы И стартуемы
 // (замок «Откроется <дата>» снят). #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B); каталог (3)
 // и устаревшие инклюзии не меняются.
-test("«Подтягивания»: две следующие недели не пустые — 2 занятия (V5.6), будущие стартуемы", async ({ page }) => {
+test("«Подтягивания»: четыре следующие недели видны с двумя занятиями V5.6 и кнопками старта", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, TELEGRAM_ID, { allowedApiStatuses: [404] });
   page.on("dialog", (dialog) => void dialog.accept());
   await onboard(page);
@@ -110,23 +110,25 @@ test("«Подтягивания»: две следующие недели не 
 
   await assertCurrentWeekActionable();
 
-  await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(1);
-  await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(2);
+  const nextWeek = page.getByRole("button", { name: "Следующая неделя" });
+  const previousWeek = page.getByRole("button", { name: "Предыдущая неделя" });
+  const futureOffsets = [1, 2, 3, 4];
+  const visitFutureWeeks = async () => {
+    for (const offset of futureOffsets) {
+      await nextWeek.click();
+      await assertFutureWeekHasCourse(offset);
+    }
+  };
+  await visitFutureWeeks();
 
   // После reload недели всё ещё на месте (серверное состояние, не клиентская подмена).
   await page.reload();
   await nav(page, "Планы").click();
   await assertCurrentWeekActionable();
-  await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(1);
-  await page.getByRole("button", { name: "Следующая неделя" }).click();
-  await assertFutureWeekHasCourse(2);
+  await visitFutureWeeks();
 
-  // Назад к текущей: ‹ ‹ — старт по-прежнему доступен.
-  await page.getByRole("button", { name: "Предыдущая неделя" }).click();
-  await page.getByRole("button", { name: "Предыдущая неделя" }).click();
+  // Назад к текущей: старт по-прежнему доступен.
+  for (const _ of futureOffsets) await previousWeek.click();
   await assertCurrentWeekActionable();
   expect(apiFailures).toEqual([]);
 });
