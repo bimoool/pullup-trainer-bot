@@ -145,6 +145,18 @@ test("J3: W-лесенка проводит 17 подходов по рецеп�
   const recipe = `${targets.join("-")} · отдых 0:10`;
   await page.getByTestId("system-workouts").getByRole("button", { name: title }).click();
   await expect(page.getByTestId("workout-detail-items")).toContainText(recipe);
+  await page.getByTestId("workout-detail-add-to-plan").click();
+  await page.getByRole("button", { name: "Свободный пул", exact: true }).click();
+  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  const planned = page.getByTestId("plans-row").filter({ hasText: title });
+  await expect(planned).toBeVisible();
+  await expect(planned).toContainText(recipe);
+  await page.reload();
+  await page.getByRole("button", { name: "Планы", exact: true }).click();
+  await expect(planned).toContainText(recipe);
+
+  await page.getByRole("button", { name: "Главная", exact: true }).click();
+  await page.getByTestId("system-workouts").getByRole("button", { name: title }).click();
   await page.getByTestId("workout-detail-start").click();
   await expect(page.getByText("Готовы к старту", { exact: true })).toBeVisible();
   await expect(page.getByText(recipe, { exact: false })).toBeVisible();
