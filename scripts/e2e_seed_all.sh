@@ -45,6 +45,8 @@ seed plan_week_start_session 930505
 seed v5_one_rep_max 930502
 # #352: independent mutable identities for saved 1RM result preservation.
 for id in 935201 935202 935203 935204; do seed v5_one_rep_max "$id"; done
+# #429: saved timer volume in independent live v1/v2 fixtures.
+for id in 935901 935902 935903 935904 935905; do seed live_engine "$id"; done
 seed v5_weighted_b_live 930506
 seed v5_weighted_b_live 930507
 # ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
