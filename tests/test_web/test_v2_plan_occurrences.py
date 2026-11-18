@@ -237,21 +237,53 @@ async def test_audit_opening_start_screens_is_not_a_rest_bypass(session, user: U
 # --- J12: будущие недели видимы и стартуемы ----------------------------------------------------
 
 
-async def test_j12_future_week_occurrence_starts_and_credits_itself(session, user: User, clock):
+@pytest.mark.parametrize("offset", [1, 4])
+async def test_j12_future_week_occurrence_starts_and_credits_itself(
+    session, user: User, clock, offset
+):
     await _enrol(session, user, clock)
-    assert (await v2_post(session, user.telegram_id, "/api/v2/plan/weeks", {"week_number": 2})).status_code == 200
+    for number in range(2, 6):
+        response = await v2_post(
+            session, user.telegram_id, "/api/v2/plan/weeks", {"week_number": number}
+        )
+        assert response.status_code == 200, response.text
     plan = await _plan(session, user)
-    future = _week_items(plan, 2)
-    assert [i["state"] for i in future][:1] == ["available"]
+    assert [w["week_number"] for w in plan["plan_weeks"]] == [1, 2, 3, 4, 5]
+    initial_ids = {}
+    for number in range(1, 6):
+        items = _week_items(plan, number)
+        initial_ids[number] = [i["id"] for i in items]
+        assert [(i["occurrence_index"], i["count_per_week"]) for i in items] == [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+        ]
+        assert all(i["credited_session_id"] is None for i in items)
+        summary = _summary(plan, number)
+        assert (summary["planned"], summary["completed"]) == (3, 0)
+    current_week_id = plan["current_week_id"]
+    assert current_week_id == _week_items(plan, 1)[0]["plan_week_id"]
 
-    started = await _start(session, user, [future[0]["id"]])
+    selected_week = 1 + offset
+    future = _week_items(plan, selected_week)[0]
+    assert future["state"] == "available"
+    started = await _start(session, user, [future["id"]])
     assert started.status_code == 200, started.text  # раньше 422 «неделя ещё не началась» (D8)
     await _finish(session, user, started, performed_at=MON)
 
     plan = await _plan(session, user)
-    assert _week_items(plan, 2)[0]["state"] == "completed"
-    assert _summary(plan, 2)["completed"] == 1
-    assert _summary(plan, 1)["completed"] == 0  # текущая неделя не засчитана по дате
+    assert plan["current_week_id"] == current_week_id
+    for number in range(1, 6):
+        items = _week_items(plan, number)
+        assert [i["id"] for i in items] == initial_ids[number]
+        assert [i["credited_session_id"] for i in items] == [
+            started.json()["id"] if number == selected_week else None,
+            None,
+            None,
+        ]
+        summary = _summary(plan, number)
+        assert (summary["planned"], summary["completed"]) == (3, int(number == selected_week))
+    assert _week_items(plan, selected_week)[0]["state"] == "completed"
 
 
 # --- Кредит: прямой старт, копия, чужое занятие -------------------------------------------------
