@@ -354,6 +354,30 @@ boundary cases passed together on isolated synthetic PostgreSQL:
 and format check passed. The owned database was removed after verifying
 ownership and zero clients. This extends the paired plan representation proof.
 
+### Follow-up at `11c3422`: J2 convergence across five synthetic profiles
+
+The [all-user convergence runner](../../scripts/repair_plan_convergence.py)
+ran on a migration-only synthetic PostgreSQL database at source
+`11c34221e165bd528b7d5745a875d5c3c7b3efa7`. Four profiles had plans: a fresh
+active profile, an active profile with a 23-day-old current-format plan,
+an active profile of the same age with a legacy snapshot missing
+`program_items`, and an expired-trial profile. An active profile without
+a plan was outside the run. The [QA fixture functions](../../scripts/qa/provision_staging_identities.py)
+created all five profiles without a payment provider.
+
+The first dry run predicted **19 changes** and left the compared rows
+unchanged. Apply made the same 19 changes: one snapshot repair, 12 weeks
+and six plan items. All four processed plans passed the runner guards.
+The compared user, subscription and program rows remained identical.
+The four earlier course sessions and their blocks, targets, 36 set logs
+and events were preserved. The runner recorded no changes to session credit.
+A second apply and a final dry run both reported **zero changes**; a
+row comparison after the second apply confirmed idempotence. The isolated
+database was removed after verifying ownership and zero clients.
+
+This checks the runner on the listed synthetic profiles. Staging rehearsal,
+backup restore and native Telegram acceptance remain open.
+
 ### Follow-up at `32c9a1a`: active v1 session across aged plan convergence
 
 The [in-flight regression](../../tests/test_services/test_plan_convergence_v2.py)
