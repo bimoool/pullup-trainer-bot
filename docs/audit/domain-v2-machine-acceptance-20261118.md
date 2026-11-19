@@ -417,6 +417,22 @@ and distinct plan credits.
 **Result — 1 passed in 1.3 min.** The isolated database was removed after
 verifying ownership and zero clients.
 
+### J2 and J4 mixed history across a calendar month boundary
+
+On the same executable tree, the older legacy workout was dated in October
+and the two earlier v2 workouts were dated in November. Chromium opened the
+October calendar, selected the workout day and checked the legacy card.
+After both weighted sessions, October still had one workout on the same day
+and the card and its API record matched the originals. November went from
+two workouts to four. Profile and Analytics went from three to five, and
+Analytics measured minutes increased from 50 to 51. PostgreSQL confirmed
+one linked legacy copy, all 29 new results and two distinct A/B credits.
+
+**Result — 1 passed in 1.3 min.** The initial harness selector matched both
+the calendar cell and the Journal date group. The passing assertion scoped
+the selector to the calendar grid. The synthetic database was removed after
+verifying ownership and zero clients.
+
 ### J2 and J4 weighted course after trial expiry
 
 A separate Chromium run on the executable tree of protected `74a7c7b`
@@ -642,9 +658,22 @@ prescription and plan item. Both earlier Journal cards stayed identical.
 **Result — 1 passed in 1.3 min**, including the real timer wait. The first
 attempt expected the edited set result in isolation. The detail view showed
 both results, and the corrected browser assertion checks both. The synthetic
-database was removed after ownership and zero-client checks. This run covers
-one aged profile in Chromium. Native Telegram and the full paired J10 matrix
-remain open.
+database was removed after ownership and zero-client checks.
+
+### J10 paired browser edit on fresh and aged profiles
+
+On the executable tree of protected `9f092be`, Chromium ran the same
+plan-started v2 edit on a fresh profile without history and a 23-day-old
+profile with two earlier workouts. On both, the Journal moved the workout
+to the prior week and showed the edited result of eight and four. The
+Analytics weekly chart and API moved the workout and its measured minutes
+to the same week while keeping aggregate totals unchanged. The exercise
+panel showed 12 repetitions. The record ID, measured duration, prescription,
+definition version and single plan credit stayed the same. The two earlier
+cards on the aged profile also matched their originals.
+
+**Result — 2 passed, 1.3 min each.** Both isolated databases were removed
+after verifying ownership and zero clients. Native Telegram remains open.
 
 ## Focused execution and isolation
 
