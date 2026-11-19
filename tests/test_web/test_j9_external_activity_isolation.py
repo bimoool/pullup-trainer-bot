@@ -1,12 +1,7 @@
-"""#309 J9: external activity leaves an existing exercise history/custom plan intact.
-
-One UTC profile, real API-created custom-plan occurrences and manual history.
-There is no course inclusion/progression or credited completion in this fixture;
-this does not prove preservation of progressed courses or every J9 persona/UI.
-"""
+"""#309 J9: external activity preserves custom plans and credited course history."""
 
 import copy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -22,7 +17,7 @@ from tests.test_web.test_v2_training_session_v2 import REPS_2x8, _manual, _worko
 NOW = datetime(2026, 10, 9, 12, tzinfo=UTC)
 
 
-async def _protected_rows(session, user_id, manual_id):
+async def _protected_rows(session, user_id, session_id):
     """Full owned plan, preexisting session/definition and all session children."""
     queries = {
         "plan": "SELECT row_to_json(p)::text FROM training_plans p WHERE p.user_id=:uid ORDER BY p.id",
@@ -31,7 +26,9 @@ async def _protected_rows(session, user_id, manual_id):
         "custom_plans": "SELECT row_to_json(c)::text FROM custom_plans c WHERE c.user_id=:uid ORDER BY c.id",
         "occurrences": "SELECT row_to_json(i)::text FROM plan_items i JOIN training_plans p ON p.id=i.training_plan_id "
         "WHERE p.user_id=:uid ORDER BY i.id",
-        "manual": "SELECT row_to_json(s)::text FROM training_sessions s WHERE s.id=:sid AND s.user_id=:uid",
+        "inclusions": "SELECT row_to_json(i)::text FROM program_inclusions i "
+        "JOIN training_plans p ON p.id=i.training_plan_id WHERE p.user_id=:uid ORDER BY i.id",
+        "session": "SELECT row_to_json(s)::text FROM training_sessions s WHERE s.id=:sid AND s.user_id=:uid",
         "definitions": "SELECT row_to_json(c)::text FROM complexes c WHERE c.owner_user_id=:uid ORDER BY c.id",
         "items": "SELECT row_to_json(i)::text FROM complex_items i JOIN complexes c ON c.id=i.complex_id "
         "WHERE c.owner_user_id=:uid ORDER BY i.id",
@@ -43,18 +40,18 @@ async def _protected_rows(session, user_id, manual_id):
         "JOIN training_sessions s ON s.id=b.session_id WHERE s.user_id=:uid ORDER BY l.id",
     }
     return {
-        key: (await session.execute(text(sql), {"uid": user_id, "sid": manual_id})).scalars().all()
+        key: (await session.execute(text(sql), {"uid": user_id, "sid": session_id})).scalars().all()
         for key, sql in queries.items()
     }
 
 
-async def _views(session, user):
+async def _views(session, user, *, analytics_query="from=2026-10-05&to=2026-10-11"):
     plan = await v2_get(session, user.telegram_id, "/api/v2/plan")
     assert plan.status_code == 200, plan.text
     analytics = await v2_get(
         session,
         user.telegram_id,
-        "/api/v2/analytics/training?from=2026-10-05&to=2026-10-11",
+        f"/api/v2/analytics/training?{analytics_query}",
     )
     assert analytics.status_code == 200, analytics.text
     journal = await v2_get(session, user.telegram_id, "/api/v2/sessions?status=completed")
@@ -212,3 +209,114 @@ async def test_external_activity_create_and_edit_preserve_nonempty_history_and_a
         row = await session.get(TrainingSession, activity_id, populate_existing=True)
         assert row.plan_item_id is None and row.program_inclusion_id is None
         assert await _protected_rows(session, user.id, manual_id) == protected
+
+
+async def test_external_activity_calendar_edit_preserves_credited_v5_6_course(
+    session, user, monkeypatch
+):
+    from tests.test_web import _premium
+    from tests.test_web.test_v2_course_v5 import (
+        MON,
+        _complete,
+        _log,
+        _main_occurrences,
+        _pullups,
+        _setup_weighted,
+        _start,
+    )
+
+    now = MON
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    for module in (routes_v2, routes_v2_analytics, live_session, training_sessions, _premium):
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+    monkeypatch.setattr(routes_v2, "_utcnow", lambda: now)
+    monkeypatch.setattr(live_session, "_utcnow", lambda: now)
+
+    inclusion = await _setup_weighted(session, user, await _pullups(session))
+    initial_revision = inclusion.progression_state_rev
+    first, _ = await _main_occurrences(session, user)
+    start = await _start(session, user, first["id"])
+    assert start.status_code == 200, start.text
+    course = start.json()
+    await _log(session, user, course, [[17, 17, 17, 19], [5] * 5])
+    now += timedelta(minutes=40)
+    completed = await _complete(session, user, course["id"])
+    assert completed["course_progression"]["next_workout_role"] == "B"
+    await session.refresh(inclusion)
+    assert inclusion.progression_state_rev == initial_revision + 1
+
+    now = datetime(2026, 11, 3, 12, tzinfo=UTC)
+    # The free course has already finished its first workout. The activity editor needs a trial.
+    await _premium.grant_premium(session, user)
+    course_id = course["id"]
+    calendar_query = "from=2026-10-05&to=2026-11-03"
+    plan_before, analytics_before, cards_before = await _views(
+        session, user, analytics_query=calendar_query
+    )
+    credited = next(row for row in plan_before["plan"]["plan_items"] if row["id"] == first["id"])
+    assert credited["credited_session_id"] == course_id
+    course_card = cards_before[course_id]
+    assert course_card["plan_item_id"] == first["id"]
+    assert (course_card["duration_seconds"], course_card["duration_source"]) == (2400, "measured")
+    assert analytics_before["exercises"]
+    assert (
+        analytics_before["metrics"]["total_workouts"],
+        analytics_before["metrics"]["total_minutes"],
+    ) == (1, 40)
+    baseline = await _protected_rows(session, user.id, course_id)
+    assert len(baseline["inclusions"]) == 1
+    assert len(baseline["targets"]) == len(baseline["logs"]) == 9
+
+    created = await v2_post(
+        session,
+        user.telegram_id,
+        "/api/v2/sessions",
+        {
+            "source": "freeform",
+            "performed_at": "2026-10-31T23:30:00+00:00",
+            "blocks": [],
+            "activity_type": "running",
+            "duration_seconds": 2700,
+        },
+    )
+    assert created.status_code == 200, created.text
+    activity_id = created.json()["id"]
+
+    for kind, day, week, minutes in (
+        ("running", "2026-10-31", "2026-10-26", 45),
+        ("cycling", "2026-11-02", "2026-11-02", 60),
+    ):
+        if kind == "cycling":
+            edited = await v2_patch(
+                session,
+                user.telegram_id,
+                f"/api/v2/sessions/{activity_id}",
+                {
+                    "activity_type": kind,
+                    "performed_on": day,
+                    "duration_seconds": minutes * 60,
+                },
+            )
+            assert edited.status_code == 200, edited.text
+        plan, analytics, cards = await _views(session, user, analytics_query=calendar_query)
+        assert plan == plan_before and analytics["exercises"] == analytics_before["exercises"]
+        assert set(cards) == set(cards_before) | {activity_id}
+        assert cards[course_id] == course_card
+        activity = cards[activity_id]
+        assert (activity["activity_type"], activity["duration_seconds"]) == (kind, minutes * 60)
+        assert datetime.fromisoformat(activity["performed_at"]).date().isoformat() == day
+        assert activity["plan_item_id"] is None and activity["blocks"] == []
+        metrics = analytics["metrics"]
+        assert (metrics["total_workouts"], metrics["total_minutes"]) == (2, 40 + minutes)
+        assert [item for item in metrics["weeks"] if item["workouts"]] == [
+            {"week_start": "2026-10-05", "workouts": 1, "minutes": 40},
+            {"week_start": week, "workouts": 1, "minutes": minutes},
+        ]
+        row = await session.get(TrainingSession, activity_id, populate_existing=True)
+        assert row.program_inclusion_id is None and row.plan_item_id is None
+        assert await _protected_rows(session, user.id, course_id) == baseline

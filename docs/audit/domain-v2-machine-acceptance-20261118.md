@@ -108,6 +108,25 @@ a label test or by an aggregate CI count. No source absence above is a claim tha
 all possible tests were exhaustively searched; these are concrete acceptance
 **evidence gaps** to resolve before writing any additional tests.
 
+## J9 external activity alongside a credited course workout
+
+The [J9 regression](../../tests/test_web/test_j9_external_activity_isolation.py)
+completes a free V5.6 course session with one credit, nine set results and
+40 measured minutes. It then adds a 45-minute run on October 31 and changes
+that same entry to 60 minutes of cycling on November 2. The edit moves the
+activity from the October 26 week to the November 2 week. Analytics shows
+two workouts and 85, then 100 minutes.
+
+The completed course card, original credit, progression revision and state,
+exercise panels and plan all remain identical. PostgreSQL confirms the same
+course inclusion, workout, blocks, targets and result rows after both writes.
+The activity has no course inclusion or plan credit.
+
+The two isolation tests and the adjacent activity-edit and V5.6 progression
+tests passed on isolated synthetic PostgreSQL (**4 passed in 8.92 s**, one
+existing Starlette 422 deprecation warning). Browser and device acceptance
+for this specific course and activity sequence remains open.
+
 ## J11 start availability at local midnight
 
 The [occurrence tests](../../tests/test_web/test_v2_plan_occurrences.py) check
