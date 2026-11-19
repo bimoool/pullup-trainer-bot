@@ -114,6 +114,31 @@ confirmed that each retained a distinct, single credit, and Plan showed 2/2.
 was removed after ownership and zero-client checks. Native WebView
 and the staging cutover rehearsal remain open.
 
+### Offline v1 completion during Plan convergence and weekly rollover
+
+The historical `020ca64` bundle ran against the API from `0bc3759` and
+`6e852be` in Chromium on isolated PostgreSQL. Two runs staged the finish
+request offline after saving sets of eight, five and four. The server still
+held an open v1 session without the note or effort when convergence ran.
+After the tab closed and reopened online, the browser sent one completion
+request for the same session ID. The Journal showed two completed sessions
+and preserved the three results, note and effort of three.
+
+- **Same week — 1 passed in 6.1 s on `0bc3759`.** The real convergence service
+  split the synthetic two-session aggregate into two occurrences. PostgreSQL
+  preserved one distinct occurrence credit per completion. Plan showed 2/2.
+- **Weekly rollover — 1 passed in 11.7 s on `6e852be`.** The browser and
+  API used fixed UTC clocks from Sunday 1 November 2026 at 23:59:55 to Monday
+  2 November at 00:00:05. Convergence froze the original aggregate as
+  history. PostgreSQL preserved the earlier completion's legacy link and
+  the resumed session's direct link to that same aggregate, with a Sunday
+  start and a Monday completion. Plan showed 2/2 in week one and zero
+  items in week two.
+
+The second convergence reported zero mutations in both runs. Each synthetic
+database was removed after verifying ownership and zero clients. Native
+Telegram and the staging cutover rehearsal remain open.
+
 ## Journey-to-test mapping and remaining cells
 
 Every entry below is SOURCE_ONLY except explicitly identified focused runs.
@@ -432,7 +457,7 @@ so the original report-only checkpoint needed no application repair or new test.
 | §3 deterministic backfill and apply-again zero | TARGETED_PASS for the selected history runner; plan runtime PASS | No claim that every backfill ambiguity/type or migration was separately rerun |
 | §4 single canonical history / legacy dual-write | TARGETED_PASS for six service tests and the direct aged rehearsal | Cross-view Journal/Profile/Analytics totals across all personas and cutover readiness still UNKNOWN |
 | §5 aged plan convergence / history credits | TARGETED_PASS for eight plan service tests | One paired same-event current/future plan regression now passes (follow-up below); the full rehearsal persona set remains UNKNOWN |
-| §6 in-flight v1 and cached old clients | TARGETED_PASS for a synthetic direct v1 session at `32c9a1a` and a planned v1 session on a legacy aggregate at `e15bd69` through aged plan convergence and API replay; historical-bundle Chromium confirms an open planned v1 session with a pending offline set on `10e5b41` | Actual cached WebView and cutover rehearsal remain open. Keep v1 until separate acceptance. |
+| §6 in-flight v1 and cached old clients | TARGETED_PASS for a synthetic direct v1 session at `32c9a1a` and a planned v1 session on a legacy aggregate at `e15bd69` through aged plan convergence and API replay. Historical-bundle Chromium confirms an open planned v1 session with a pending offline set on `10e5b41`, plus offline completion both within a week and across weekly rollover. | Actual cached Telegram WebView and cutover rehearsal remain open. Keep v1 until separate acceptance. |
 | §7 subscription/access preservation | TARGETED_PASS for exact fixture fingerprints/cache/access assertions | Not a global audit of all campaign migration writes or all entitled accounts; full persona before/after comparison still required |
 | §8 rehearsal and rollback | Partial synthetic migration/convergence PASS only | No production-shaped dump used, no restore drill, no staging cutover or flag change; mandatory full rehearsal remains incomplete |
 | Physical R, native Telegram, audible timer and watch | UNKNOWN | Device evidence remains separate; no owner manual QA, new chat or relay requested by this task |
