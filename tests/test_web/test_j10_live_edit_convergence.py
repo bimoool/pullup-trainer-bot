@@ -1,22 +1,23 @@
 """#309 J10: one edit of measured direct-live history reaches every API read model.
 
-This complements the existing combined MANUAL/entered-duration case in
-test_canonical_history.py. It covers explicit engine v1, one UTC Builder profile,
-not UI/default engine v2, course progression, or every fresh/aged persona.
+This complements the manual/entered-duration case in test_canonical_history.py
+with measured Builder sessions on both live engines.
 """
 
 import copy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import text
+import pytest
+from sqlalchemy import select, text
 
-from app.db.models_program import TrainingSession
+from app.db.models_program import SessionEvent, TrainingSession
 from app.db.repositories import training_sessions
-from app.services import live_session
+from app.services import live_engine, live_session
 from app.web import routes_v2, routes_v2_analytics
 from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
+from tests.test_web.test_v2_live_engine import _active, _event, _post_events, _state, _submit
 from tests.test_web.test_v2_training_session_v2 import REPS_2x8, _complete, _start, _workout
 
 FIRST = datetime(2026, 10, 7, 9, tzinfo=UTC)
@@ -59,6 +60,13 @@ async def _frozen_recipe_and_credit(session, session_id):
         .scalars()
         .all()
     )
+    events = (
+        await session.execute(
+            select(SessionEvent.id, SessionEvent.type, SessionEvent.server_at, SessionEvent.payload)
+            .where(SessionEvent.session_id == session_id)
+            .order_by(SessionEvent.id)
+        )
+    ).all()
     return copy.deepcopy(
         (
             row.workout_definition_id,
@@ -68,13 +76,18 @@ async def _frozen_recipe_and_credit(session, session_id):
             row.plan_item_id,
             row.program_inclusion_id,
             row.engine_version,
+            row.engine_state,
             targets,
+            [tuple(event) for event in events],
         )
     )
 
 
+@pytest.mark.parametrize("engine_version", [pytest.param(1, id="v1"), pytest.param(2, id="v2")])
 async def test_date_and_value_edit_of_measured_live_session_moves_journal_and_analytics(
-    session, monkeypatch
+    session,
+    monkeypatch,
+    engine_version,
 ):
     now = FIRST
 
@@ -87,6 +100,7 @@ async def test_date_and_value_edit_of_measured_live_session_moves_journal_and_an
     for module in (live_session, training_sessions, routes_v2, routes_v2_analytics):
         monkeypatch.setattr(module, "datetime", FixedDatetime)
     monkeypatch.setattr(live_session, "_utcnow", lambda: now)
+    monkeypatch.setattr(live_engine, "_utcnow", lambda: now)
     monkeypatch.setattr(routes_v2, "_utcnow", lambda: now)
     # Existing synthetic trial-cache helper satisfies the public Builder gate;
     # this fixture does not create Subscription/payment-provider entitlement rows.
@@ -96,27 +110,52 @@ async def test_date_and_value_edit_of_measured_live_session_moves_journal_and_an
     ids = []
     for at, minutes, values in ((FIRST, 30, (8, 8)), (CONTROL, 10, (6, 6))):
         now = at
-        started = await _start(session, user, {"workout_id": workout.id, "engine_version": 1})
-        session_id = started["id"]
-        batch = await v2_post(
-            session,
-            user.telegram_id,
-            f"/api/v2/sessions/live/{session_id}/sets:batch",
-            {
-                "sets": [
-                    {
-                        "set_index": index,
-                        "exercise_id": exercise.id,
-                        "value": str(value),
-                        "block_index": 0,
-                    }
-                    for index, value in enumerate(values)
-                ],
-            },
+        started = await _start(
+            session, user, {"workout_id": workout.id, "engine_version": engine_version}
         )
-        assert batch.status_code == 200, batch.text
-        now = at + timedelta(minutes=minutes)
-        completed = await _complete(session, user, session_id)
+        session_id = started["id"]
+        assert started["engine_version"] == engine_version
+        if engine_version == 2:
+            now = at + timedelta(seconds=10)
+            work = _state(await _active(session, user))
+            rest = _state(await _post_events(session, user, session_id, _submit(work, values[0])))
+            now += timedelta(seconds=10)
+            paused = _state(
+                await _post_events(
+                    session,
+                    user,
+                    session_id,
+                    _event("pause", {"phase_seq": rest["phase_seq"]}),
+                )
+            )
+            assert paused["phase"] == "REST" and paused["paused_at"] is not None
+            now += timedelta(seconds=90)
+            await _post_events(
+                session, user, session_id, _event("resume", {"phase_seq": paused["phase_seq"]})
+            )
+            now = at + timedelta(minutes=minutes, seconds=90)
+            work = _state(await _active(session, user))
+            completed = await _post_events(session, user, session_id, _submit(work, values[1]))
+        else:
+            batch = await v2_post(
+                session,
+                user.telegram_id,
+                f"/api/v2/sessions/live/{session_id}/sets:batch",
+                {
+                    "sets": [
+                        {
+                            "set_index": index,
+                            "exercise_id": exercise.id,
+                            "value": str(value),
+                            "block_index": 0,
+                        }
+                        for index, value in enumerate(values)
+                    ],
+                },
+            )
+            assert batch.status_code == 200, batch.text
+            now = at + timedelta(minutes=minutes)
+            completed = await _complete(session, user, session_id)
         assert completed["status"] == "completed"
         ids.append(session_id)
     await session.commit()
@@ -145,7 +184,18 @@ async def test_date_and_value_edit_of_measured_live_session_moves_journal_and_an
     assert identity["workout_definition_id"] == workout.id
     assert identity["plan_item_id"] is None
     row = await session.get(TrainingSession, target_id, populate_existing=True)
-    assert row.engine_version == 1 and row.program_inclusion_id is None
+    assert row.engine_version == engine_version and row.program_inclusion_id is None
+    if engine_version == 2:
+        assert row.engine_state["status"] == "completed"
+        assert (
+            await session.scalar(
+                select(SessionEvent.id).where(
+                    SessionEvent.session_id == target_id,
+                    SessionEvent.type == "pause",
+                )
+            )
+            is not None
+        )
     assert (identity["duration_source"], identity["duration_seconds"]) == ("measured", 1800)
     assert (cards[control_id]["duration_source"], cards[control_id]["duration_seconds"]) == (
         "measured",
