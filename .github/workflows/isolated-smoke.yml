@@ -86,12 +86,15 @@ jobs:
           done
           echo SMOKE_API_NOT_HEALTHY
           exit 1
-      - name: Install browser
+      - name: Prepare Playwright and select runner Chrome
         working-directory: webapp-frontend/e2e-staging
         run: |
           npm ci
           npm run typecheck
-          npx playwright install --with-deps chromium
+          chromium_path="$(command -v google-chrome)"
+          test -x "$chromium_path"
+          "$chromium_path" --version
+          printf 'E2E_CHROMIUM_PATH=%s\n' "$chromium_path" >> "$GITHUB_ENV"
       - name: Real provider and signed browser smoke
         working-directory: webapp-frontend/e2e-staging
         run: |
