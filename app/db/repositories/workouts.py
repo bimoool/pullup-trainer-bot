@@ -300,12 +300,15 @@ class WorkoutRepository:
         )
         return list(result.scalars().all())
 
-    async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
-        result = await self._session.execute(
-            select(func.max(Workout.performed_at)).where(
-                Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED,
-            ),
+    async def latest_completed_performed_at(
+        self, user_id: int, *, through: datetime | None = None,
+    ) -> datetime | None:
+        query = select(func.max(Workout.performed_at)).where(
+            Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED,
         )
+        if through is not None:
+            query = query.where(Workout.performed_at <= through)
+        result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
     async def list_for_user(self, user_id: int) -> list[Workout]:

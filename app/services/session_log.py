@@ -16,10 +16,11 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.domain.constants import EquipmentType
-from app.domain.multi_program import MetricType, SessionSource
+from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.progression_strategy import ProgressionContext, StepProgressionStrategy
 from app.domain.pullups_v5 import is_v5_state
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
+from app.services.plan_spacing import MainSpacingService
 
 # issue #305: инклюзия программы V5.6 (progression_state.program_version = "pullups_v5_6") прогрессирует
 # ТОЛЬКО от рецепта, выданного живым стартом и записанного в снимок сессии (app.services.course_v5).
@@ -243,7 +244,7 @@ class TrainingSessionLogService:
         program_inclusion_id: int | None, completed_at: datetime | None = None,
         activity_type: str | None = None, duration_seconds: int | None = None,
         targets_by_block: list[list[SetTargetInput]] | None = None, workout_snapshot: dict | None = None,
-        client_session_id: uuid.UUID | None = None,
+        client_session_id: uuid.UUID | None = None, timezone: str | None = None,
     ) -> tuple[RecordSessionResult | None, bool]:
         """Второй элемент кортежа — True, если program_inclusion_id передан,
         но не найден/не принадлежит пользователю (вызывающий код превращает
@@ -255,11 +256,22 @@ class TrainingSessionLogService:
             if inclusion is None:
                 return None, True
 
+        spacing_violation = False
+        if source == SessionSource.PLAN and inclusion is not None:
+            main_exercises = {
+                item["exercise_id"] for item in inclusion.snapshot.get("exercises", ())
+                if item.get("role") in INTERNAL_ROLE_SUBCATEGORIES
+            }
+            if any(block.exercise_id in main_exercises and block.sets for block in blocks):
+                spacing_violation = await MainSpacingService(self._session).retrospective_main_violates_spacing(
+                    user_id, performed_at=performed_at, timezone=timezone,
+                )
+
         training_session = await self._sessions.create_session(
             user_id=user_id, source=source, performed_at=performed_at,
             effort=effort, comment=comment, blocks=blocks, completed_at=completed_at,
             activity_type=activity_type, duration_seconds=duration_seconds, targets_by_block=targets_by_block,
-            workout_snapshot=workout_snapshot, client_session_id=client_session_id,
+            workout_snapshot=workout_snapshot, client_session_id=client_session_id, spacing_violation=spacing_violation,
         )
         session_detail = await self._sessions.get_for_user(training_session.id, user_id)
 
