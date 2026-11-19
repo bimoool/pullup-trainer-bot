@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime, time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.timezones import resolve_timezone
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.programs import ProgramRepository
@@ -35,7 +36,6 @@ from app.domain.plan_occurrence import (
     spacing_days_by_group,
 )
 from app.domain.rules import ReadinessCheck, check_training_readiness
-from app.services.training_analytics import resolve_timezone
 
 
 class TooEarlyError(Exception):
@@ -95,14 +95,28 @@ class MainSpacingService:
         (тот же источник для legacy-путей без включения); иначе None → фолбэк конфига."""
         return await ProgramRepository(self._session).spacing_constraints_for_user(user_id)
 
-    async def last_main_start_at(self, user_id: int) -> datetime | None:
-        legacy = await WorkoutRepository(self._session).latest_completed_performed_at(user_id)
-        native = await TrainingSessionRepository(self._session).latest_main_session_at(user_id)
+    async def last_main_start_at(self, user_id: int, *, through: datetime | None = None) -> datetime | None:
+        legacy = await WorkoutRepository(self._session).latest_completed_performed_at(user_id, through=through)
+        native = await TrainingSessionRepository(self._session).latest_main_session_at(user_id, through=through)
         candidates = [value for value in (legacy, native) if value is not None]
         return max(candidates) if candidates else None
 
     async def count_native_main_sessions(self, user_id: int) -> int:
         return await TrainingSessionRepository(self._session).count_main_sessions(user_id)
+
+    async def retrospective_main_violates_spacing(
+        self, user_id: int, *, performed_at: datetime, timezone: str | None,
+    ) -> bool:
+        """K3: оцениваем запись перед вставкой по истории на момент тренировки."""
+        if performed_at.tzinfo is None:
+            performed_at = performed_at.replace(tzinfo=UTC)
+        last = await self.last_main_start_at(user_id, through=performed_at)
+        if last is None:
+            return False
+        tz = resolve_timezone(timezone)
+        min_days = await self.min_days_between_starts(user_id)
+        available = available_from(last.astimezone(tz).date(), min_days)
+        return is_too_early(performed_at.astimezone(tz).date(), available)
 
     async def status(self, user: User, *, now: datetime, group: str = MAIN_SPACING_GROUP) -> SpacingStatus:
         tz = resolve_timezone(user.timezone)

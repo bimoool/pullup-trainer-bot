@@ -274,6 +274,7 @@ class TrainingSessionRepository:
         completed_at: datetime | None = None, activity_type: str | None = None,
         duration_seconds: int | None = None, targets_by_block: list[list[SetTargetInput]] | None = None,
         workout_snapshot: dict | None = None, client_session_id: uuid.UUID | None = None,
+        spacing_violation: bool = False,
     ) -> TrainingSession:
         """Завершённая сессия одним запросом (ручная запись Журнала, запись программы).
 
@@ -288,6 +289,7 @@ class TrainingSessionRepository:
             performed_at=performed_at, effort=effort, comment=comment,
             completed_at=completed_at if completed_at is not None else datetime.now(UTC),
             activity_type=activity_type, duration_seconds=duration_seconds, client_session_id=client_session_id,
+            spacing_violation=spacing_violation,
         )
         if workout_snapshot is not None:
             # JSONB: явный None записался бы JSON-значением 'null', а не SQL NULL — и предикаты
@@ -1272,12 +1274,13 @@ class TrainingSessionRepository:
             or_(credited_main, and_(role_block_with_log, ~manual_record)),
         )
 
-    async def latest_main_session_at(self, user_id: int) -> datetime | None:
-        result = await self._session.execute(
-            select(func.max(TrainingSession.performed_at)).where(
-                TrainingSession.user_id == user_id, self.main_session_predicate(),
-            ),
+    async def latest_main_session_at(self, user_id: int, *, through: datetime | None = None) -> datetime | None:
+        query = select(func.max(TrainingSession.performed_at)).where(
+            TrainingSession.user_id == user_id, self.main_session_predicate(),
         )
+        if through is not None:
+            query = query.where(TrainingSession.performed_at <= through)
+        result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
     async def count_main_sessions(self, user_id: int) -> int:
