@@ -7,6 +7,7 @@ Aged-профиль строится старыми путями записи (�
 ничего не удалено, инклюзия/прогрессия/подписка/история не тронуты, повторный прогон = 0 изменений."""
 
 import copy
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -14,6 +15,7 @@ from sqlalchemy import func, select
 
 from app.db.models import SubscriptionStatus, User
 from app.db.models_program import (
+    ComplexItem,
     Exercise,
     PlanItem,
     PlanWeek,
@@ -267,7 +269,6 @@ async def test_aged_profile_current_and_future_plan_stays_functional(session, mo
     #304 B2: ОБА авторитетных часа зафиксированы на всё время теста — «сегодня» плана
     (routes_v2._utcnow) и «сейчас» проверки отдыха на старте (live_session._utcnow). Раньше старт шёл по
     реальным часам: с реальной даты ≥ 2026-10-09 (= available_from) он проходил, и тест краснел."""
-    import uuid
 
     from app.services import live_session
     from app.web import routes_v2
@@ -298,6 +299,104 @@ async def test_aged_profile_current_and_future_plan_stays_functional(session, mo
     })
     assert started.status_code == 409 and started.json()["detail"]["code"] == "too_early"
     assert started.json()["detail"]["available_from"] == "2026-10-09"
+
+
+async def test_inflight_v1_workout_completes_after_aged_plan_convergence(session):
+    """MIGRATION_V2 §6: a cached client's v1 queue resumes on the existing session."""
+    from tests.test_web._premium import grant_premium
+    from tests.test_web._v2_client import v2_get, v2_post
+    from tests.test_web.test_v2_live_engine import REPS_2x8_R30, _builder
+    from tests.test_web.test_v2_live_phase_back import _log, _next, _to_rest_of_set
+    from tests.test_web.test_v2_training_session_v2 import _card
+
+    aged = await _aged_profile(session)
+    user = await grant_premium(session, aged["user"])
+    workout = await _builder(session, user, [REPS_2x8_R30])
+    exercise_id = await session.scalar(
+        select(ComplexItem.exercise_id).where(ComplexItem.complex_id == workout.id)
+    )
+    assert exercise_id is not None
+    url = "/api/v2/sessions/live"
+    started = await v2_post(
+        session,
+        user.telegram_id,
+        url,
+        {
+            "client_session_id": str(uuid.uuid4()),
+            "workout_id": workout.id,
+        },
+    )
+    assert started.status_code == 200, started.text
+    initial = started.json()
+    session_id = initial["id"]
+    assert (initial["engine_version"], initial["engine"]) == (1, None)
+    rest = await _to_rest_of_set(session, user, session_id, exercise_id)
+    assert rest["phase"]["name"] == "rest"
+    row = await session.get(TrainingSession, session_id)
+    snapshot = copy.deepcopy(row.prescription_snapshot)
+    assert snapshot is not None
+    before = await _fingerprint(session, user.id)
+
+    today = datetime.now(UTC).date()
+    service = PlanConvergenceService(session)
+    _, report = await service.converge_user_plan(training_plan_id=aged["plan"].id, today=today)
+    assert report.mutations > 0
+    await session.commit()
+    _, again = await service.converge_user_plan(training_plan_id=aged["plan"].id, today=today)
+    assert again.mutations == 0, again.as_dict()
+    assert await _fingerprint(session, user.id) == before
+    active = await v2_get(session, user.telegram_id, f"{url}/active")
+    assert active.status_code == 200, active.text
+    resumed = active.json()["session"]
+    for key in (
+        "id",
+        "engine_version",
+        "engine",
+        "phase",
+        "phase_index",
+        "current_set_number",
+        "blocks",
+    ):
+        assert resumed[key] == rest[key], key
+
+    # The old client can replay the first set and phase before delivering the second set.
+    replayed = await _log(session, user, session_id, exercise_id, 0, "9")
+    assert len(replayed["blocks"][0]["set_logs"]) == 1
+    stale = await _next(session, user, session_id, rest["phase_index"] - 1)
+    assert (stale["phase"]["name"], stale["phase_index"]) == ("rest", rest["phase_index"])
+    ready = await _next(session, user, session_id, stale["phase_index"])
+    go = await _next(session, user, session_id, ready["phase_index"])
+    assert (go["phase"]["name"], go["current_set_number"]) == ("go", 2)
+    await _log(session, user, session_id, exercise_id, 1, "6")
+    done = await v2_post(
+        session, user.telegram_id, f"{url}/{session_id}/complete", {"abandoned": False}
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["status"] == "completed"
+    card = await _card(session, user, session_id)
+    assert card["prescription_snapshot"] == snapshot
+    assert [(log["set_number"], log["value"]) for log in card["blocks"][0]["set_logs"]] == [
+        (1, "9.00"),
+        (2, "6.00"),
+    ]
+    await session.refresh(row)
+    assert row.engine_version == 1 and row.engine_state is None
+
+    new = await v2_post(
+        session,
+        user.telegram_id,
+        url,
+        {
+            "client_session_id": str(uuid.uuid4()),
+            "workout_id": workout.id,
+            "engine_version": 2,
+        },
+    )
+    assert new.status_code == 200, new.text
+    second = new.json()
+    assert second["id"] != session_id
+    assert second["engine_version"] == 2 and second["engine"] is not None
+    assert await _card(session, user, session_id) == card
 
 
 async def test_fresh_inclusion_converges_to_occurrences_and_second_run_is_noop(session):
@@ -391,7 +490,6 @@ async def test_course_without_materializable_slots_keeps_its_rows_startable(sess
     """Регрессия (найдено E2E #304): синтетический STEP-курс без ProgramItem (строки PlanItem заведены
     напрямую, как scripts/e2e_seed.py::seed_v2_session_ready) — занятий на замену нет, значит агрегатные
     строки НЕ выводятся из плана и стартуются как раньше; повторная сходимость — 0 изменений."""
-    import uuid
 
     from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
     from app.web import routes_v2
