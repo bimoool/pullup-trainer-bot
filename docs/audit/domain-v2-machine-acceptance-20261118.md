@@ -397,6 +397,40 @@ results, the two original prescribed loads and distinct A and B credits.
 **Result — 1 passed in 12.6 s.** The synthetic database was removed after
 checking ownership and zero clients.
 
+### J2 and J4 weighted course with mixed legacy and v2 history
+
+Chromium ran on the executable tree of protected `15a20e6` with an
+M=25 profile, a 23-day-old plan missing `program_items`, two earlier native
+v2 workouts and one legacy workout entered through the backdated writer.
+The fixture used the production tagging path for native sessions. A's
+performed date was shifted by three days in the synthetic database to
+model rest before B.
+
+Journal, its calendar, Profile and Analytics agreed on three workouts
+before the course and five after it. Analytics moved from 50 to 51 measured
+minutes and continued to count one workout without a measured duration. The
+three historical Journal cards matched after A and B. PostgreSQL still had
+one legacy workout and one canonical copy linked to it. The two new course
+sessions had all 29 expected results, stored loads of +5.5 and +10.5 kg
+and distinct plan credits.
+
+**Result — 1 passed in 1.3 min.** The isolated database was removed after
+verifying ownership and zero clients.
+
+### J2 and J4 weighted course after trial expiry
+
+A separate Chromium run on the executable tree of protected `74a7c7b`
+completed the same weighted A and B on an M=25 profile with a 23-day-old
+plan and two earlier workouts. It preserved both earlier Journal cards,
+saved 29 results and awarded separate credits at the same prescribed
+loads. PostgreSQL confirmed that the subscription status remained `expired`
+and that its expiry timestamp stayed identical. The fixture again modelled
+rest by shifting A's date three days in synthetic PostgreSQL.
+
+**Result — 1 passed in 12.2 s.** The isolated database was removed after
+verifying ownership and zero clients. Native Telegram remains open for both
+weighted scenarios.
+
 ## J8 backdated workout on a profile with existing course history
 
 Chromium ran against API and frontend source `348d870` on a separate
