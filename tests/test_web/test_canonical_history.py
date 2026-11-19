@@ -317,6 +317,87 @@ async def test_repeated_convergence_and_dual_write_never_duplicate_a_copy(sessio
             await session.flush()
 
 
+@pytest.mark.parametrize(
+    "legacy_day,native_day",
+    [
+        pytest.param(date(2026, 10, 31), date(2026, 11, 1), id="month-boundary"),
+        pytest.param(date(2026, 11, 1), date(2026, 11, 2), id="week-boundary"),
+    ],
+)
+async def test_archived_workout_card_survives_mixed_history_convergence(
+    session: AsyncSession,
+    monkeypatch,
+    legacy_day: date,
+    native_day: date,
+):
+    from app.web import routes_v2
+    from tests.test_web import _premium
+    from tests.test_web.test_v2_training_session_v2 import REPS_2x8, _card, _manual, _workout
+
+    now = datetime(2026, 11, 3, 12, tzinfo=UTC)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    for module in (routes_v2, _premium):
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+
+    user, workout_set = await _legacy_user(session, 990053)
+    await _pull_ups(session)
+    legacy_at = datetime.combine(legacy_day, BASE.timetz())
+    native_at = datetime.combine(native_day, BASE.timetz())
+    legacy = await WorkoutRepository(session).record_backdated_workout(
+        **_kwargs(user, workout_set, legacy_at, 11)
+    )
+    copy = await session.scalar(
+        select(TrainingSession).where(
+            TrainingSession.user_id == user.id,
+            TrainingSession.origin == SessionOrigin.LEGACY_BACKFILL.value,
+            TrainingSession.legacy_id == legacy.id,
+        )
+    )
+    assert copy is not None
+    copy.legacy_id = None  # Pre-#308 backfill retained this copy without the legacy key.
+    await session.flush()
+
+    workout, _ = await _workout(session, user, [REPS_2x8], title="Турник в парке")
+    manual = await _manual(
+        session,
+        user,
+        workout,
+        [["8", "6"]],
+        performed_at=native_at.isoformat(),
+        duration_seconds=1500,
+    )
+    assert manual.status_code == 200, manual.text
+    native_id = manual.json()["id"]
+    original = await _card(session, user, native_id)
+    assert original["workout_id"] == workout.id and original["prescription_snapshot"] is not None
+
+    archived = await v2_delete(session, user.telegram_id, f"/api/v2/workouts/{workout.id}")
+    assert archived.status_code == 204, archived.text
+    before = await _card(session, user, native_id)
+    assert before["workout_id"] is None and before["title"] == "Турник в парке"
+    assert before["prescription_snapshot"] == original["prescription_snapshot"]
+    assert before["blocks"] == original["blocks"]
+    assert before["duration_seconds"] == 1500
+
+    service = LegacyHistoryConvergenceService(session)
+    dry = await service.converge_user(user.id, apply=False)
+    assert dry.counts["bound"] == dry.mutations == 1 and copy.legacy_id is None
+    applied = await service.converge_user(user.id, apply=True)
+    assert applied.counts["bound"] == applied.mutations == 1
+    assert copy.legacy_id == legacy.id and copy.superseded_at is None
+    assert (await service.converge_user(user.id, apply=True)).mutations == 0
+
+    assert await _card(session, user, native_id) == before
+    _assert_one_number(await _all_totals(session, user), 2)
+    assert await _calendar_total(session, user, legacy_day, legacy_day) == 1
+    assert await _calendar_total(session, user, native_day, native_day) == 1
+
+
 # --- F, G: правка и удаление legacy ---------------------------------------------------------------------
 
 
