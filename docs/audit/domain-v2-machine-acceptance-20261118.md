@@ -660,6 +660,26 @@ cleared on both profiles.
 after verifying ownership and zero clients. Native Telegram background
 return, audible cue timing and watch behavior remain open.
 
+### J5 paired browser return after 60 seconds hidden
+
+On the executable tree of protected `a55fb13`, Chromium kept the training
+tab mounted on a fresh profile and on a 23-day-old profile with two prior
+workouts. After the first set, the server reported a rest deadline. The
+scenario set document visibility to hidden for 60 real seconds and then
+dispatched a visibility event to return to the workout.
+
+The refreshed server state showed the same session in its second set,
+with the start of that set aligned to the original rest deadline. The
+instrumented Web Audio oscillator recorded cancellation of the scheduled
+rest cue when the page was hidden. The cue stayed cancelled on return.
+Both profiles recorded five and four repetitions in one Journal card
+with one plan credit. The aged profile retained its two earlier cards.
+
+**Result — 2 passed, 1.2 min each.** Both synthetic databases were removed
+after verifying ownership and zero clients. This was a Chromium
+visibility simulation with a real server clock. Telegram device
+backgrounding, audible cue timing and watch behavior remain open.
+
 ## J10 date and result edits on Live Engine v2
 
 The [J10 regression](../../tests/test_web/test_j10_live_edit_convergence.py)
