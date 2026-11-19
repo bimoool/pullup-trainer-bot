@@ -250,6 +250,25 @@ the zero baseline, both sets of results and one plan credit.
 **Result — 1 passed in 39.5 s.** The synthetic database was removed after
 verifying ownership and zero clients.
 
+## J4 first weighted V5.6 session at M=25
+
+Chromium ran against protected runtime `c360d2a` on a migration-only
+synthetic PostgreSQL database. A new profile entered 25 pull-ups through
+onboarding, then supplied a body mass of 70 kg and a 0.5 kg loading step.
+The browser submitted eight scripted outcomes through the server's 1RM
+ladder. The server confirmed a 31 kg additional-weight result.
+
+The prescreen showed 17/17/17/17+ and 5×5 at +5.5 kg. Live Engine v2
+showed all nine targets and the same load on each strength set. The UI
+showed the planned four-minute, fifteen-minute and three-minute rests.
+The completed session retained 17, 17, 17, 19 and five results of five.
+The Journal, PostgreSQL snapshot and Plan agreed on the saved session,
+the prescribed +5.5 kg and its single occurrence credit. The API then
+prescribed B as 15×5 with a separate 5×3 strength block at +10.5 kg.
+
+**Result — 1 passed in 10.2 s.** The synthetic database was removed
+after checking ownership and zero clients.
+
 ## J4 legacy Block B execution and progression
 
 Chromium ran two sessions on the protected runtime `6e852be`, each with a
