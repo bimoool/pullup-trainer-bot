@@ -90,6 +90,30 @@ distinct plan credits, and preservation of the queued set values and
 completion notes. The synthetic target was removed after ownership and
 zero-client checks. Native Telegram WebView evidence remains open.
 
+### An open v1 session with an offline result during Plan convergence
+
+Chromium ran the same historical bundle on the exact protected API
+`10e5b41` with a single synthetic profile. After a live planned v1
+session reached its first working set, Chromium went offline and queued
+eight repetitions. PostgreSQL still had no result for the open session.
+
+The harness represented that plan as an old two-session weekly aggregate.
+It linked one earlier synthetic completion to the aggregate and left
+the open session's phase and snapshots intact. The real Plan convergence
+service split the aggregate into two occurrences and credited the earlier
+completion to the first and the open session to the second. The queued set
+was still absent on the server. A second apply reported zero changes.
+
+On reconnect, the browser synchronized the queued result and reopened the
+first set with eight repetitions in the same v1 session. It then finished
+with results of eight, five and four. Replaying completion returned the
+same result ID. The Journal held two completed sessions. PostgreSQL
+confirmed that each retained a distinct, single credit, and Plan showed 2/2.
+
+**Result — 1 passed in 6.9 s**, with no retries. The synthetic database
+was removed after ownership and zero-client checks. Native WebView
+and the staging cutover rehearsal remain open.
+
 ## Journey-to-test mapping and remaining cells
 
 Every entry below is SOURCE_ONLY except explicitly identified focused runs.
@@ -100,7 +124,7 @@ fresh/aged acceptance cells remain UNKNOWN in this report.**
 | Journey / accepted observation | Existing source anchors | This checkpoint and concrete missing acceptance |
 |---|---|---|
 | J1: onboarding, 7-day trial, free course, prescription, plan/live/history/analytics/reopen | [Trial service](../../tests/test_services/test_onboarding_trial_guarantee.py); [free access API](../../tests/test_web/test_free_program_access.py); [V5.6 API](../../tests/test_web/test_v2_course_v5.py) `test_new_inclusion_uses_v5_6_rule_and_records_provenance`; [V5.6 E2E](../../webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts); [golden Builder E2E](../../webapp-frontend/e2e/scenarios/golden-journey.spec.ts) | TARGETED_PASS at `032626d`: the fresh V5.6 browser journey records both blocks of A, checks the named Journal entry and reports its one completed occurrence after reload. Analytics then shows one workout in «Подтягивания» and the actual stored duration rounded to nonzero minutes; the API totals, category and browser display agree. Migration-only Chromium: 1 focused case passed. Trial and access are covered by the service and API tests. The browser follow-up below covers plan, Journal and Analytics on one aged profile. B continuation and physical-device evidence remain open. |
-| J2: aged state converges without history/entitlement loss; repeat is zero | [Plan convergence](../../tests/test_services/test_plan_convergence_v2.py) `test_aged_profile_converges_and_preserves_history`, `test_run_all_second_apply_has_zero_mutations`; [single-history rehearsal](../../tests/test_scripts/test_single_history_migration.py) `test_aged_database_converges_idempotently_without_touching_legacy_history`; [aged runtime repair](../../tests/test_services/test_aged_state_convergence.py) | TARGETED_PASS for the named plan/legacy modules and single direct rehearsal below; **partial J2**, not whole J2 PASS. The paired regression below establishes current/future plan equivalence for one legacy representation pair. The follow-up at `45eccac` also verifies two workouts in Journal, Profile and Analytics and 80 measured minutes in Analytics for both. The paid and expired variants below cover the same plan representation and check entitlement preservation. A separate single-profile regression at `12805e8` preserves an archived workout card during mixed-history convergence across calendar boundaries. The paired mixed-history follow-up below covers one archived definition and compares restored plan credit across current and old storage. The other deleted-definition and mid-session combinations remain open. |
+| J2: aged state converges without history/entitlement loss; repeat is zero | [Plan convergence](../../tests/test_services/test_plan_convergence_v2.py) `test_aged_profile_converges_and_preserves_history`, `test_run_all_second_apply_has_zero_mutations`; [single-history rehearsal](../../tests/test_scripts/test_single_history_migration.py) `test_aged_database_converges_idempotently_without_touching_legacy_history`; [aged runtime repair](../../tests/test_services/test_aged_state_convergence.py) | TARGETED_PASS for the named plan/legacy modules and single direct rehearsal below; **partial J2**, not whole J2 PASS. The paired regression below establishes current/future plan equivalence for one legacy representation pair. The follow-up at `45eccac` also verifies two workouts in Journal, Profile and Analytics and 80 measured minutes in Analytics for both. The paid and expired variants below cover the same plan representation and check entitlement preservation. A separate single-profile regression at `12805e8` preserves an archived workout card during mixed-history convergence across calendar boundaries. The paired mixed-history follow-up below covers one archived definition and compares restored plan credit across current and old storage. The follow-ups also cover a missing definition and one planned v1 session queued offline during convergence. Native and remaining profile combinations stay open. |
 | J3: exact 17-target W-ladder, order/rest, persistence and Journal labels | [Workout domain](../../tests/test_workout_definition.py) `test_w_ladder_is_17_explicit_sets_in_exact_order`; [API](../../tests/test_web/test_v2_workout_definition.py) `test_w_ladder_detail_and_catalog_show_explicit_sequence`; [J3 fresh-install browser case](../../webapp-frontend/e2e/scenarios/fix-wave1/fresh-install-content.spec.ts) | MACHINE_PARTIAL. A new plan-row assertion reproduced the missing recipe on `45eccac`: the row showed only the name, 0/1 and Start. With the canonical recipe added, all four fresh-install Chromium cases pass on a database provisioned only by migrations. W-ladder shows the exact recipe in Detail, on the plan row before and after reload, and on the direct pre-screen. The v2 engine plan specifies 16 rests of 10 seconds; all 17 live targets are checked and submitted; after reload, the single Journal entry shows the persisted plan and result in order. The fresh test skips waits. The aged-profile Chromium check below exercises all 16 ten-second rests. Native-device evidence remains open. |
 | J4: legacy 4 working + max persistence; current V5.6 exact recipes | [Legacy prescription domain](../../tests/test_course_prescription.py); [legacy API](../../tests/test_web/test_v2_course_prescription.py); [V5.6 golden examples](../../tests/test_pullups_v5.py) `test_m0_assisted_example`, `test_m10_qualifies_immediately_with_transition_volume`, `test_m25_example`, `test_m50_start_cap_only`; [course engine](../../tests/test_web/test_v2_course_v5_engine.py); [course E2E](../../webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts) | TARGETED_PASS for V5.6 on `6be2d38`. A and the opt-in B continuation each passed in Chromium on a single synthetic profile. After A, only its performed date was shifted by three days in the isolated database to model the rest period. B confirmed 10×5 volume, five strength sets, 60-second volume rest and progression to 11×5. PostgreSQL retained all 15 B values in order, with distinct A and B occurrence credit. The aged-profile A/B check below adds preservation evidence for two previous sessions. The legacy and remaining golden-profile cases use the source anchors. |
 | J5: automatic deadlines, background return, pause/reload and audio offsets | [Shared vectors](../../tests/test_live_engine_vectors.py); [engine API](../../tests/test_web/test_v2_live_engine.py); [offline reopen](../../tests/test_web/test_v2_live_engine_offline_reopen.py); [engine E2E](../../webapp-frontend/e2e/scenarios/live-engine-v2.spec.ts), deadline/background/pause cases | A targeted Chromium run on one aged profile verified start by timer, pause across reload and automatic return to the second set after reopening. Physical background return at ±1 s, audible offsets and watch behavior remain open. |
@@ -408,7 +432,7 @@ so the original report-only checkpoint needed no application repair or new test.
 | §3 deterministic backfill and apply-again zero | TARGETED_PASS for the selected history runner; plan runtime PASS | No claim that every backfill ambiguity/type or migration was separately rerun |
 | §4 single canonical history / legacy dual-write | TARGETED_PASS for six service tests and the direct aged rehearsal | Cross-view Journal/Profile/Analytics totals across all personas and cutover readiness still UNKNOWN |
 | §5 aged plan convergence / history credits | TARGETED_PASS for eight plan service tests | One paired same-event current/future plan regression now passes (follow-up below); the full rehearsal persona set remains UNKNOWN |
-| §6 in-flight v1 and cached old clients | TARGETED_PASS for a synthetic direct v1 session at `32c9a1a` and a planned v1 session on a legacy aggregate at `e15bd69` through aged plan convergence and API replay | Actual cached WebView and cutover rehearsal remain open. Keep v1 until separate acceptance. |
+| §6 in-flight v1 and cached old clients | TARGETED_PASS for a synthetic direct v1 session at `32c9a1a` and a planned v1 session on a legacy aggregate at `e15bd69` through aged plan convergence and API replay; historical-bundle Chromium confirms an open planned v1 session with a pending offline set on `10e5b41` | Actual cached WebView and cutover rehearsal remain open. Keep v1 until separate acceptance. |
 | §7 subscription/access preservation | TARGETED_PASS for exact fixture fingerprints/cache/access assertions | Not a global audit of all campaign migration writes or all entitled accounts; full persona before/after comparison still required |
 | §8 rehearsal and rollback | Partial synthetic migration/convergence PASS only | No production-shaped dump used, no restore drill, no staging cutover or flag change; mandatory full rehearsal remains incomplete |
 | Physical R, native Telegram, audible timer and watch | UNKNOWN | Device evidence remains separate; no owner manual QA, new chat or relay requested by this task |
@@ -559,6 +583,24 @@ distribution matched after removing synthetic exercise IDs.
 **Result — 5 passed in 14.31 s**, including the focused pair, both existing
 archived-history calendar cases and both existing current/aged plan cases.
 The isolated database was removed after ownership and zero-client checks.
+
+### Mixed history when its former workout definition is absent
+
+The paired check was repeated on the same runtime with the older
+synthetic profile's archived definition absent. Journal still displayed
+the frozen title, recipe, results and 25-minute duration. The views
+still counted three workouts and 65 measured minutes. The older
+course credit converged to the same occurrence as the current profile.
+
+The missing definition removed the proof needed for safe deletion.
+The card reported deletion unavailable and the real endpoint refused
+the request with HTTP 409 and the same reason. The first test had
+expected that permission to stay available. The corrected run asserts
+the documented protection and compares the remaining historical facts.
+
+**Result — 3 passed in 8.47 s**, including the focused variant and two
+adjacent workout-link tests. The isolated database was removed after
+ownership and zero-client checks.
 
 ### Follow-up at `6be2d38`: paid and expired entitlements during J2 convergence
 
