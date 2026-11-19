@@ -232,6 +232,24 @@ and results. The completed session API returned 17 persisted targets and
 identical. **Result — 1 passed in 3.0 min**, zero retries. The isolated
 database was removed after ownership and zero-client checks.
 
+## J1 and J4 with a zero baseline in V5.6
+
+Chromium ran the fresh onboarding-to-course journey with zero
+pull-ups on protected runtime `27b9852`. A migration-only PostgreSQL
+database started without a user. Onboarding saved the zero baseline,
+and the course prompted for assistance inputs before showing the
+prescription. With volume capacity ten, the prescreen and Live Engine
+showed A as 7/7/7/7+ and assisted strength as 5/5/5/5/5–8.
+
+The session saved 7, 7, 7, 9 and 5, 5, 5, 5, 6. Plan showed 1/2 after
+reload, Journal showed both named blocks, and Analytics showed one
+course workout with its measured minutes. The next prescription
+contained ten sets of five with sixty-second rests. PostgreSQL confirmed
+the zero baseline, both sets of results and one plan credit.
+
+**Result — 1 passed in 39.5 s.** The synthetic database was removed after
+verifying ownership and zero clients.
+
 ## J4 legacy Block B execution and progression
 
 Chromium ran two sessions on the protected runtime `6e852be`, each with a
