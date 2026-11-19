@@ -772,7 +772,7 @@ async function openScreenWithUnreadableQueue(page: Page, context: BrowserContext
   await failIndexedDbReads(back, "first-active-read");
   // запуск: сверка App — 422 → «не ждём», ворота открыты → GET /active → экран сессии, его чтение очереди падает
   const { apiFailures } = await openAppAs(back, telegramId, { allowedApiStatuses: [422], backButton: true });
-  await expect.poll(() => order.includes("active"), { timeout: 10_000 }).toBe(true); // экран сессии открывается
+  await expect.poll(() => [...order], { timeout: 10_000 }).toContain("active"); // экран сессии открывается
   await sleep(1_500); // дольше первой паузы повтора чтения (1 с)
   expectRejectedThenActive(order); // экран не запросил свою проекцию (refresh) с непрочитанной очередью
   await expect(back.getByTestId("engine-stop")).toHaveCount(0); // и не принимает новое действие
@@ -798,8 +798,10 @@ test("19. Экран: чтение очереди упало после успе
   expect(apiFailures.filter((failure) => !failure.startsWith("422 "))).toEqual([]);
 });
 
-test("20. Экран: уход и перезагрузка во время сбоя чтения очереди — App держит ворота, «Повторить» после восстановления — доставлен один раз", async ({ page, context }) => {
-  const { back, order, savedIds, apiFailures } = await openScreenWithUnreadableQueue(page, context, 930_620);
+test("20. Экран: уход и перезагрузка во время сбоя чтения очереди — App держит ворота, «Повторить» после восстановления — доставлен один раз", async ({ page, context }, testInfo) => {
+  // При падении первая попытка может оставить открытую сессию на сервере.
+  const telegramId = testInfo.retry === 0 ? 930_620 : 930_642;
+  const { back, order, savedIds, apiFailures } = await openScreenWithUnreadableQueue(page, context, telegramId);
   await pressTelegramBackButton(back); // уход с экрана: очередь переходит к сверке App
   await expect(back.getByTestId("engine-store-error")).toBeVisible({ timeout: 10_000 }); // App тоже не читает — ворота держит
   await back.reload(); // перезагрузка во время сбоя
@@ -814,7 +816,7 @@ test("20. Экран: уход и перезагрузка во время сб�
   expect(order.filter((step) => step.startsWith("events:") && step !== "events:422")).toEqual(["events:ok"]);
   expect(order.indexOf("events:ok")).toBeLessThan(order.lastIndexOf("active")); // досылка раньше новой проекции
   await expect.poll(() => storedEngineEventIds(back), { timeout: 10_000 }).toEqual([]);
-  const state = await serverEngineState(back, 930_620);
+  const state = await serverEngineState(back, telegramId);
   expect(state.logs).toHaveLength(1);
   expect(state.logs[0].value).toBeGreaterThanOrEqual(1);
   expect(state.logs[0].value).toBeLessThanOrEqual(6);

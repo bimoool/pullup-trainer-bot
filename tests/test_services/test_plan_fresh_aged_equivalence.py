@@ -1,7 +1,7 @@
 """#309 / J2: identical API events, current occurrences vs reconstructed aged storage.
 
-This checks aggregate/M2M/cache representation convergence, not old-writer replay,
-progression migration, past aggregate display, or the complete aged-persona matrix.
+This checks aggregate/M2M/cache representation convergence and cross-view history,
+not old-writer replay, progression migration, or the complete aged-persona matrix.
 Both users explicitly keep the SAME legacy program version; V5.6 is not rewritten.
 """
 
@@ -77,6 +77,39 @@ def _projection(plan, inclusion_id, event_ids):
         ],
         "spacing": plan["spacing"],
     }
+
+
+async def _assert_cross_view_history(session, telegram_id, event_ids):
+    async def read(path):
+        response = await v2_get(session, telegram_id, path)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    legacy = await read("/api/history?date_from=2026-10-05&date_to=2026-10-09")
+    journal = await read(
+        "/api/v2/sessions?status=completed&date_from=2026-10-05&date_to=2026-10-09&exclude_legacy_cards=true"
+    )
+    assert legacy["items"] == []
+    assert [(s["id"], s["title"], s["duration_seconds"]) for s in journal["sessions"]] == [
+        (session_id, "Подтягивания", 2400) for session_id in reversed(event_ids)
+    ]
+    calendar = await read("/api/v2/journal/days?month=2026-10")
+    assert [(d["date"], d["count"]) for d in calendar["days"]] == [
+        ("2026-10-05", 1),
+        ("2026-10-08", 1),
+    ]
+    assert (await read("/api/profile"))["workouts_count"] == 2
+    analytics = await read("/api/v2/analytics/training?from=2026-10-05&to=2026-10-09")
+    metrics, distribution = analytics["metrics"], analytics["distribution"]
+    assert metrics["weeks"] == [{"week_start": "2026-10-05", "workouts": 2, "minutes": 80}]
+    assert metrics["without_duration"] == 0
+    for view in (metrics, distribution):
+        assert (view["total_workouts"], view["total_minutes"]) == (2, 80)
+    assert [
+        (category["name"], category["workouts"], category["minutes"])
+        for category in distribution["categories"]
+        if category["workouts"] or category["minutes"]
+    ] == [("Подтягивания", 2, 80)]
 
 
 async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(session, monkeypatch):
@@ -294,6 +327,7 @@ async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(ses
             create_until_week=5,
         )
         assert again.mutations == 0, again.as_dict()
+        await _assert_cross_view_history(session, user.telegram_id, ids)
     assert counters == [("active", 2, 2, THU)] * 2
     assert projections[0] == projections[1]
     assert projections[0]["spacing"] == [
