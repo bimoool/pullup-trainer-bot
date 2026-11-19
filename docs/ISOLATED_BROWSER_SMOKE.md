@@ -19,7 +19,11 @@ runtime and GitHub usage should be checked after the first successful runs.
 
 The dedicated config in `webapp-frontend/e2e-staging/playwright.smoke.config.ts`
 uses the pure signer and explicit Android/Chromium launch contract from #384.
-It imports neither the staging session fixture nor a Telegram mock. Checks cover:
+The workflow installs Playwright from its lockfile and selects Google Chrome
+already installed on the Ubuntu runner. The job logs the selected version and
+fails if the executable is missing. The browser config uses the selected path
+for the same synthetic launch and imports neither the staging session fixture
+nor a Telegram mock. Checks cover:
 
 - Real API accepting a signed request and rejecting missing/tampered signatures.
 - Real `telegram.org/js/telegram-web-app.js` loading and `Telegram.WebApp` existing.
