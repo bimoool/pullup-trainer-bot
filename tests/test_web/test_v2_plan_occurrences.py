@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.bot.handlers.workout import resolve_rest_day_notice
-from app.db.models import User
+from app.db.models import Baseline, User
 from app.db.models_program import (
     Complex,
     ComplexItem,
@@ -217,6 +217,102 @@ async def test_j11_monday_main_wednesday_rejected_thursday_allowed(
     ).scalar_one()
     assert credited == states[2]["id"]
     assert await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=THU) is None
+
+
+@pytest.mark.parametrize(
+    "timezone,performed_at,last_date,ready_at,ready_date",
+    [
+        pytest.param(
+            "Asia/Yekaterinburg",
+            datetime(2026, 10, 31, 19, 30, tzinfo=UTC),
+            "2026-11-01",
+            datetime(2026, 11, 3, 19, tzinfo=UTC),
+            "2026-11-04",
+            id="month-boundary-east-of-utc",
+        ),
+        pytest.param(
+            "America/Los_Angeles",
+            datetime(2026, 10, 31, 6, 30, tzinfo=UTC),
+            "2026-10-30",
+            datetime(2026, 11, 2, 8, tzinfo=UTC),
+            "2026-11-02",
+            id="fallback-west-of-utc",
+        ),
+    ],
+)
+async def test_j11_all_paths_release_rest_at_local_midnight(
+    session,
+    user: User,
+    clock,
+    monkeypatch,
+    timezone,
+    performed_at,
+    last_date,
+    ready_at,
+    ready_date,
+):
+    await _enrol(session, user, clock)
+    user.timezone = timezone
+    user.onboarding_completed_at = MON
+    session.add(Baseline(user_id=user.id, performed_at=MON, reps=12))
+    await session.flush()
+
+    clock(performed_at)
+    first_occurrence = _week_items(await _plan(session, user), 4)[0]
+    started = await _start(session, user, [first_occurrence["id"]])
+    assert started.status_code == 200, started.text
+    await _finish(session, user, started, performed_at=performed_at)
+
+    now = ready_at - timedelta(minutes=1)
+
+    class LocalBoundaryClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    monkeypatch.setattr(legacy_routes, "datetime", LocalBoundaryClock)
+    clock(now)
+    future = await v2_post(session, user.telegram_id, "/api/v2/plan/weeks", {"week_number": 5})
+    assert future.status_code == 200, future.text
+    plan = await _plan(session, user)
+    assert plan["spacing"] == [
+        {
+            "spacing_group": "main",
+            "min_days_between_starts": 3,
+            "last_start_date": last_date,
+            "available_from": ready_date,
+        }
+    ]
+    next_occurrence = _week_items(plan, 5)[0]
+    assert (next_occurrence["state"], next_occurrence["available_from"]) == (
+        "too_early",
+        ready_date,
+    )
+    blocked = await _start(session, user, [next_occurrence["id"]])
+    assert blocked.status_code == 409, blocked.text
+    detail = blocked.json()["detail"]
+    assert (detail["code"], detail["available_from"]) == ("too_early", ready_date)
+    legacy = await v2_get(session, user.telegram_id, "/api/workout/plan")
+    assert legacy.status_code == 200, legacy.text
+    assert (legacy.json()["status"], legacy.json()["available_from"]) == ("too_early", ready_date)
+    notice = await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=now)
+    day_label = datetime.fromisoformat(ready_date).strftime("%d.%m")
+    assert (
+        notice is not None
+        and f"Осталось 1 ч., можно будет тренироваться {day_label} в 00:00." in notice[0]
+    )
+
+    now = ready_at
+    clock(now)
+    available = _week_items(await _plan(session, user), 5)[0]
+    assert available["id"] == next_occurrence["id"] and available["state"] == "available"
+    legacy = await v2_get(session, user.telegram_id, "/api/workout/plan")
+    assert legacy.status_code == 200 and legacy.json()["status"] == "ready", legacy.text
+    assert await resolve_rest_day_notice(session, telegram_id=user.telegram_id, now=now) is None
+    allowed = await _start(session, user, [available["id"]])
+    assert allowed.status_code == 200, allowed.text
+    saved = await session.get(TrainingSession, allowed.json()["id"])
+    assert saved.plan_item_id == available["id"]
 
 
 async def test_k2_fresh_wednesday_third_main_is_infeasible(session, user: User, clock):
