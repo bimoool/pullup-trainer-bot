@@ -100,7 +100,7 @@ fresh/aged acceptance cells remain UNKNOWN in this report.**
 | J9: external run 45 min, category/count/minutes, edit, no panel/plan change | [Journal create/list API](../../tests/test_web/test_v2_journal_log.py) `test_freeform_activity_is_stored_and_listed`; [canonical category API](../../tests/test_web/test_canonical_history.py) `test_external_activity_has_a_deterministic_category_and_display_name`; [external edit API](../../tests/test_web/test_v2_training_session_v2.py) `test_external_activity_edit_duration_type_and_date_keeps_duration`; new [nonempty history/custom-plan isolation API](../../tests/test_web/test_j9_external_activity_isolation.py) | Follow-up TARGETED_PASS at source base `047c9c5`: **3 passed, 1 warning in 8.63 s**, exit 0, no skips. Existing cases establish running45 identity/category and editable activity facts. The new case adds an actual API-created two-occurrence custom plan and prior manual history: running45 then cycling60 leaves the entire existing exercise payload, plan API, custom-plan/occurrence rows, prior manual session/recipe/targets/logs unchanged; global counts/minutes move 1/30 → 2/75 → 2/90 and activity identity stays fixed without plan credit. The warning is an unsuppressed existing Starlette 422 deprecation in the adjacent validation case. This fixture has no course inclusion/progression or credited completion; those preservation claims, full UI, paired fresh/aged personas and full J9 remain UNKNOWN. |
 | J10: edit date/value moves Journal and analytics week, preserves duration/totals | Existing **manual / entered-duration** combined case: [canonical history API](../../tests/test_web/test_canonical_history.py) `test_date_and_value_edit_move_series_journal_day_and_exercise_history`; [measured-live date API](../../tests/test_web/test_v2_training_session_v2.py) `test_date_edit_of_live_session_keeps_measured_duration`; new [measured-live combined API](../../tests/test_web/test_j10_live_edit_convergence.py) | Existing manual source already combines date/value, weekly buckets, calendar/card movement and exercise history; it must not be described as absent. The new case targets the distinct measured `direct_live`, explicit engine-v1 path with literal previous-week buckets, stable 2 workouts / 40 minutes, 30-minute measured duration and immutable targets/snapshots/credit. TARGETED_PASS at source base `047c9c5`: new case plus those two adjacent cases, **3 passed in 6.63 s**, no skips, after a corrected test-authoring tuple error (no product RED claim). The follow-up below verifies the combined edit on v2 with a server-measured pause. Browser UI and the paired fresh/aged J10 matrix remain UNKNOWN. |
 | J11: Mon→Thu spacing, all start paths, infeasible capacity, manual violation flag | [Occurrence API](../../tests/test_web/test_v2_plan_occurrences.py) `test_j11_monday_main_wednesday_rejected_thursday_allowed`, `test_k2_fresh_wednesday_third_main_is_infeasible`; [legacy API](../../tests/test_web/test_workout.py); [bot dispatcher](../../tests/test_bot/test_workout_section_rest_status.py); [V5.6 E2E](../../webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts) | Follow-up TARGETED_PASS on source base `f16330e`: four focused cases passed. After a Monday v2 session, the Wednesday v2 start rejects with `too_early`, legacy HTTP returns the same 8 October availability date, and the bot notice helper renders 14 hours until 08.10 at 00:00 UTC. The Thursday v2 start and the separate dispatch and infeasible-capacity checks pass. Manual K3 flagging and the full UI/aged/device trace remain open. |
-| J12: +1…+4 visibility; future start and credit, current week unchanged | [Occurrence API](../../tests/test_web/test_v2_plan_occurrences.py) `test_j12_future_week_occurrence_starts_and_credits_itself`; [week UI](../../webapp-frontend/e2e/scenarios/fix-wave1/later-weeks.spec.ts) | Follow-up TARGETED_PASS on source base `53a4831`: both +1 and +4 API completion cases and two adjacent cases passed. Credit attaches to the selected future occurrence; all five weeks retain their occurrence IDs and the other four completion counts stay at zero. On a fresh V5.6 profile Chromium shows all four future weeks with two start controls each before and after reload. Follow-up at `034fdbb`: migration-only Chromium confirms a fresh V5.6 session can start from week +4, complete all nine sets on Live Engine v2, and credit only that occurrence. After reload, the current week still shows 0/2, week +4 shows 1/2, all ten occurrence IDs are preserved, and the nine other credits remain empty. One focused case passed. Aged UI remains unverified. |
+| J12: +1…+4 visibility; future start and credit, current week unchanged | [Occurrence API](../../tests/test_web/test_v2_plan_occurrences.py) `test_j12_future_week_occurrence_starts_and_credits_itself`; [week UI](../../webapp-frontend/e2e/scenarios/fix-wave1/later-weeks.spec.ts) | Follow-up TARGETED_PASS on source base `53a4831`: both +1 and +4 API completion cases and two adjacent cases passed. Credit attaches to the selected future occurrence; all five weeks retain their occurrence IDs and the other four completion counts stay at zero. On a fresh V5.6 profile Chromium shows all four future weeks with two start controls each before and after reload. Follow-up at `034fdbb`: migration-only Chromium confirms a fresh V5.6 session can start from week +4, complete all nine sets on Live Engine v2, and credit only that occurrence. After reload, the current week still shows 0/2, week +4 shows 1/2, all ten occurrence IDs are preserved, and the nine other credits remain empty. One focused case passed. The follow-up below verifies the same visibility and +4 credit in Chromium on one old snapshot with two preexisting Journal cards. |
 
 Cross-cutting display requirements (no raw slug/id, fractional workout or fake zero
 target; consistent names on all six surfaces) are not certified globally by locating
@@ -126,6 +126,29 @@ The two isolation tests and the adjacent activity-edit and V5.6 progression
 tests passed on isolated synthetic PostgreSQL (**4 passed in 8.92 s**, one
 existing Starlette 422 deprecation warning). Browser and device acceptance
 for this specific course and activity sequence remains open.
+
+## J12 future-week credit on a profile with old plan history
+
+Chromium ran against the application built from
+`8efcbd2ca9bdc9ba462a7a2b376f72e7bfff4b7e` and a migration-only synthetic
+PostgreSQL target. The [aged fixture](../../scripts/qa/provision_staging_identities.py)
+created a plan 23 days in the past, one materialized week, two completed
+historical workouts and a course snapshot missing `program_items`. Those
+conditions were checked before the browser opened Plans.
+
+The browser trace adapted the [existing J12 scenario](../../webapp-frontend/e2e/scenarios/fix-wave1/later-weeks.spec.ts)
+to start from that profile and compare its original Journal cards. The Plan
+API repaired the snapshot. Each of weeks +1 through +4 showed two actionable
+occurrences before and after reload. The +4 start returned engine version 2
+and targeted one occurrence. The workout completed through the UI. On reload,
+the current week stayed at 0/2, week +4 showed 1/2, and the ten occurrence
+IDs across those five weeks were preserved. The other nine had no credit.
+The Journal gained one card and both prior cards were identical.
+
+**Result — 1 passed in 10.0 s**, with zero retries. The synthetic target was
+removed after ownership and zero-client checks. This covers one old plan
+representation in Chromium. Native Telegram and the complete J12 matrix
+remain open.
 
 ## J11 start availability at local midnight
 
