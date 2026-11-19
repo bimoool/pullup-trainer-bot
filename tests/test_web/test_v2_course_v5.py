@@ -8,6 +8,7 @@ course_setup_required, PUT /course/inputs) → живой старт занят�
 кредита, устаревшая версия программы читается и исполняется прежним кодом, тест 1RM."""
 
 import uuid
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -314,6 +315,121 @@ async def test_v5_main_start_respects_main_spacing(session, user: User, clock):
 
 
 # --- Завершение: типизированная прогрессия --------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "started_at,expected_week",
+    [
+        pytest.param(datetime(2026, 10, 31, 23, 59, 55, tzinfo=UTC), 4, id="month-boundary"),
+        pytest.param(datetime(2026, 11, 1, 23, 59, 55, tzinfo=UTC), 5, id="week-boundary"),
+    ],
+)
+async def test_main_v1_session_progresses_once_after_aged_plan_convergence(
+    session,
+    user: User,
+    clock,
+    monkeypatch,
+    started_at: datetime,
+    expected_week: int,
+):
+    from app.db.repositories import training_sessions
+    from app.db.repositories.training_plans import TrainingPlanRepository
+    from app.services.plan_convergence import PlanConvergenceService
+    from tests.test_web.test_v2_training_session_v2 import _card
+
+    now = MON
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    for module in (live_session, routes_v2, training_sessions):
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+
+    inclusion = await _setup_weighted(session, user, await _pullups(session))
+    occurrence, next_occurrence = await _main_occurrences(session, user, week_number=4)
+    plans = TrainingPlanRepository(session)
+    old_week = next(
+        week
+        for week in await plans.list_plan_weeks(inclusion.training_plan_id)
+        if week.week_number == 1
+    )
+    legacy_rows = await plans.create_plan_items_for_week_from_snapshot(
+        training_plan_id=inclusion.training_plan_id,
+        program_inclusion_id=inclusion.id,
+        plan_week_id=old_week.id,
+        program_items_snapshot=inclusion.snapshot["program_items"],
+    )
+    assert len(legacy_rows) == 2
+    await session.commit()
+
+    now = started_at
+    clock(now)
+    started = await _start(session, user, occurrence["id"])
+    assert started.status_code == 200, started.text
+    active = started.json()
+    assert (active["engine_version"], active["engine"]) == (1, None)
+    session_id = active["id"]
+    await _log(session, user, active, [[17], []])
+    active_path = "/api/v2/sessions/live/active"
+    before = await v2_get(session, user.telegram_id, active_path)
+    assert before.status_code == 200, before.text
+    before_body = before.json()["session"]
+    assert [item["value"] for item in before_body["blocks"][0]["set_logs"]] == ["17.00"]
+    row = await session.get(TrainingSession, session_id)
+    assert row.performed_at == started_at and row.plan_item_id == occurrence["id"]
+    prescription = deepcopy(row.prescription_snapshot)
+    assert prescription is not None
+    progression = deepcopy(inclusion.progression_state)
+    revision = inclusion.progression_state_rev
+
+    now += timedelta(seconds=10)
+    clock(now)
+    service = PlanConvergenceService(session)
+    week, report = await service.converge_user_plan(
+        training_plan_id=inclusion.training_plan_id, today=now.date()
+    )
+    assert week.week_number == expected_week and report.aggregates_frozen == len(legacy_rows)
+    _, repeated = await service.converge_user_plan(
+        training_plan_id=inclusion.training_plan_id, today=now.date()
+    )
+    assert repeated.mutations == 0, repeated.as_dict()
+    await session.commit()
+    await session.refresh(inclusion)
+    assert (
+        inclusion.progression_state == progression and inclusion.progression_state_rev == revision
+    )
+
+    resumed = await v2_get(session, user.telegram_id, active_path)
+    assert resumed.status_code == 200, resumed.text
+    after = resumed.json()["session"]
+    for field in ("id", "engine_version", "phase", "phase_index", "blocks"):
+        assert after[field] == before_body[field], field
+
+    await _log(session, user, active, [[17, 17, 17, 19], [5] * 5])
+    completed = await _complete(session, user, session_id)
+    assert completed["status"] == "completed"
+    assert completed["course_progression"]["next_workout_role"] == "B"
+    assert (await _complete(session, user, session_id))["status"] == "completed"
+    await session.refresh(inclusion)
+    assert inclusion.progression_state_rev == revision + 1
+    assert inclusion.progression_state["volume_a"]["targets"] == [18, 17, 17, 17]
+    assert inclusion.progression_state["strength_a"]["load_kg"] == "6.5"
+
+    card = await _card(session, user, session_id)
+    assert (
+        card["plan_item_id"] == occurrence["id"] and card["prescription_snapshot"] == prescription
+    )
+    assert [[log["value"] for log in block["set_logs"]] for block in card["blocks"]] == [
+        ["17.00", "17.00", "17.00", "19.00"],
+        ["5.00"] * 5,
+    ]
+    plan_response = await v2_get(session, user.telegram_id, "/api/v2/plan")
+    assert plan_response.status_code == 200, plan_response.text
+    by_id = {item["id"]: item for item in plan_response.json()["plan"]["plan_items"]}
+    assert by_id[occurrence["id"]]["credited_session_id"] == session_id
+    assert by_id[next_occurrence["id"]]["credited_session_id"] is None
 
 
 async def test_a_then_b_sequence_progresses_each_block_by_its_own_signal(session, user: User, clock):
