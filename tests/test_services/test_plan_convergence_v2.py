@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 
 from app.db.models import SubscriptionStatus, User
@@ -96,15 +97,16 @@ async def _session_linked(session, user: User, rows: list[PlanItem], performed_a
     return ts.id
 
 
-async def _aged_profile(session) -> dict:
+async def _aged_profile(session, *, plan_created: datetime = PLAN_CREATED) -> dict:
     """Владелецподобный aged-пользователь: курс с недели 1, агрегатные строки недель 1–4, история."""
+    week4_monday = plan_created + timedelta(weeks=3, hours=1)
     user = await UserRepository(session).create(telegram_id=4242, username="aged")
     user.timezone = "UTC"
     user = await UserRepository(session).update_subscription_cache(
         user.id, status=SubscriptionStatus.ACTIVE, expires_at=datetime(2026, 12, 1, tzinfo=UTC),
     )
     program, program_items, roles = await _catalogue(session)
-    plan = TrainingPlan(user_id=user.id, created_at=PLAN_CREATED)
+    plan = TrainingPlan(user_id=user.id, created_at=plan_created)
     session.add(plan)
     await session.flush()
     snapshot = {
@@ -117,7 +119,7 @@ async def _aged_profile(session) -> dict:
     }
     inclusion = ProgramInclusion(
         training_plan_id=plan.id, program_id=program.id, snapshot=snapshot, progression_state=PROGRESSED,
-        initial_progression_state={"schema_version": 1}, started_at=PLAN_CREATED, is_active=True,
+        initial_progression_state={"schema_version": 1}, started_at=plan_created, is_active=True,
     )
     session.add(inclusion)
     await session.flush()
@@ -127,7 +129,7 @@ async def _aged_profile(session) -> dict:
     for number in (1, 2, 3, 4):
         week = await repo.create_plan_week(
             training_plan_id=plan.id, week_number=number,
-            start_date=PLAN_CREATED.date() + timedelta(weeks=number - 1), phase=WeekPhase.BASE,
+            start_date=plan_created.date() + timedelta(weeks=number - 1), phase=WeekPhase.BASE,
         )
         weeks[number] = week
         aggregates[number] = await repo.create_plan_items_for_week_from_snapshot(
@@ -136,11 +138,11 @@ async def _aged_profile(session) -> dict:
         )
     # История: неделя 2 — 2 сессии курса; неделя 4 — 2 сессии (Пн и Вт, обе по A+B).
     past = [
-        await _session_linked(session, user, aggregates[2], datetime(2026, 9, 22 + d, 10, tzinfo=UTC), roles["block_a"])
-        for d in (0, 3)
+        await _session_linked(session, user, aggregates[2], week4_monday - timedelta(days=d), roles["block_a"])
+        for d in (13, 10)
     ]
     current = [
-        await _session_linked(session, user, aggregates[4], WEEK4_MON + timedelta(days=d), roles["block_a"])
+        await _session_linked(session, user, aggregates[4], week4_monday + timedelta(days=d), roles["block_a"])
         for d in (1, 0)  # порядок вставки ≠ порядок performed_at
     ]
     # Ручная строка старой формы: «Планка» 2 раза в неделю, одна сессия на неделе 4.
@@ -152,7 +154,7 @@ async def _aged_profile(session) -> dict:
     )
     session.add(manual)
     await session.flush()
-    manual_session = await _session_linked(session, user, [manual], WEEK4_MON + timedelta(days=1, hours=5), plank)
+    manual_session = await _session_linked(session, user, [manual], week4_monday + timedelta(days=1, hours=5), plank)
     await session.commit()
     return {
         "user": user, "plan": plan, "inclusion": inclusion, "weeks": weeks, "aggregates": aggregates,
@@ -301,16 +303,37 @@ async def test_aged_profile_current_and_future_plan_stays_functional(session, mo
     assert started.json()["detail"]["available_from"] == "2026-10-09"
 
 
-async def test_inflight_v1_workout_completes_after_aged_plan_convergence(session):
-    """MIGRATION_V2 §6: a cached client's v1 queue resumes on the existing session."""
-    from tests.test_web._premium import grant_premium
+@pytest.mark.parametrize(
+    "now,expected_week,expected_credits,expected_aggregate_status",
+    [
+        pytest.param(datetime(2026, 10, 31, 12, tzinfo=UTC), 4, 3, "removed", id="october-end"),
+        pytest.param(datetime(2026, 11, 1, 12, tzinfo=UTC), 4, 3, "removed", id="november-start"),
+        pytest.param(datetime(2026, 11, 2, 12, tzinfo=UTC), 5, 0, "open", id="next-monday"),
+    ],
+)
+async def test_inflight_v1_workout_completes_after_aged_plan_convergence(
+    session, monkeypatch, now, expected_week, expected_credits, expected_aggregate_status,
+):
+    """MIGRATION_V2 §6: v1 HTTP replay resumes the same session across plan convergence."""
+    from app.db.repositories import training_sessions
+    from app.services import live_session, program_inclusion
+    from app.web import routes_v2
+    from tests.test_web import _premium
     from tests.test_web._v2_client import v2_get, v2_post
     from tests.test_web.test_v2_live_engine import REPS_2x8_R30, _builder
     from tests.test_web.test_v2_live_phase_back import _log, _next, _to_rest_of_set
     from tests.test_web.test_v2_training_session_v2 import _card
 
-    aged = await _aged_profile(session)
-    user = await grant_premium(session, aged["user"])
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    for module in (live_session, program_inclusion, training_sessions, routes_v2, _premium):
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+
+    aged = await _aged_profile(session, plan_created=datetime(2026, 10, 5, 9, tzinfo=UTC))
+    user = await _premium.grant_premium(session, aged["user"])
     workout = await _builder(session, user, [REPS_2x8_R30])
     exercise_id = await session.scalar(
         select(ComplexItem.exercise_id).where(ComplexItem.complex_id == workout.id)
@@ -333,15 +356,25 @@ async def test_inflight_v1_workout_completes_after_aged_plan_convergence(session
     rest = await _to_rest_of_set(session, user, session_id, exercise_id)
     assert rest["phase"]["name"] == "rest"
     row = await session.get(TrainingSession, session_id)
+    assert row.performed_at == now
     snapshot = copy.deepcopy(row.prescription_snapshot)
     assert snapshot is not None
     before = await _fingerprint(session, user.id)
 
-    today = datetime.now(UTC).date()
+    today = now.date()
     service = PlanConvergenceService(session)
-    _, report = await service.converge_user_plan(training_plan_id=aged["plan"].id, today=today)
+    week, report = await service.converge_user_plan(training_plan_id=aged["plan"].id, today=today)
+    assert week.week_number == expected_week
     assert report.mutations > 0
+    assert report.credits_linked == expected_credits
     await session.commit()
+    for aggregate in aged["aggregates"][4]:
+        await session.refresh(aggregate)
+        assert aggregate.legacy_aggregate and aggregate.status == expected_aggregate_status
+    credits = await _credits(session, user.id)
+    credited_sessions = [*aged["current_sessions"], aged["manual_session"]]
+    assert len({credits[sid] for sid in credited_sessions if credits[sid] is not None}) == expected_credits
+    assert credits[session_id] is None
     _, again = await service.converge_user_plan(training_plan_id=aged["plan"].id, today=today)
     assert again.mutations == 0, again.as_dict()
     assert await _fingerprint(session, user.id) == before

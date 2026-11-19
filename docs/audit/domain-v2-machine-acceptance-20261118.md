@@ -234,15 +234,19 @@ ownership and zero clients. This extends the paired plan representation proof.
 
 The [in-flight regression](../../tests/test_services/test_plan_convergence_v2.py)
 starts a direct workout through the old API request and records one set before
-converging an aged plan. The first convergence mutates the plan and the second
-reports zero changes. Reopening the active session returns the same v1 ID,
+converging an aged plan. Fixed clocks exercise October 31, November 1 and
+November 2, 2026. The first two dates expand the fourth week and transfer
+three distinct credits from the linked sessions. On Monday the fourth week
+freezes as history and no credit is transferred. The in-flight direct session
+receives no plan credit. The second convergence reports zero changes in each
+case. Reopening the active session returns the same v1 ID,
 phase, targets and recorded set. Replaying the first set and a stale phase
 request through v1 produces no duplicate or phase change. After the second
 set, the Journal preserves the frozen prescription and both results. A
 subsequent v2 start has a new session ID and leaves that Journal card unchanged.
 
-The new case and the adjacent aged-history and v1-compatibility cases passed
-on isolated synthetic PostgreSQL, **3 passed in 8.06 s**, no skips. Ruff and diff
+The plan convergence module and the adjacent v1-compatibility case passed
+on isolated synthetic PostgreSQL, **12 passed in 15.78 s**, no skips. Ruff and diff
 checks passed. The owned database was removed after verifying ownership and
 zero clients. This exercises the v1 HTTP contract during plan convergence.
 The fixture does not run a cached WebView or change a deployment flag.
