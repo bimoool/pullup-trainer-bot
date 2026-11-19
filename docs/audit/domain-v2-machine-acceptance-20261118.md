@@ -304,7 +304,22 @@ The next strength B recipe was 5×3 at +10.5 kg.
 
 **Result — 1 passed in 7.7 s for each profile.** Both synthetic
 databases were removed after checking ownership and zero clients.
-The next B recipes were read from the API. This run executed A.
+These first runs executed A and checked the next recipe. Two independent
+Chromium runs then also executed B, using the same executable tree in
+`c360d2a` and protected `397594b`. Each run shifted only the performed
+date of A by three days in its synthetic database to model the rest.
+
+| Baseline | Completed B volume and strength | Next B volume | Persisted A and B results | Browser result |
+|---|---|---|---|---|
+| M=10 | 10×3, then 5×3 at +10.5 kg | 10×4 | 24 | 1 passed in 12.4 s |
+| M=50 | 17×5, then 5×3 at +10.5 kg | 18×5 | 31 | 1 passed in 16.1 s |
+
+The M=50 recipe returned to A with targets of 21, 20, 20 and 20 after
+the initial 20-repetition cap. The original M=50 results of 20, 20, 20
+and 22 survived. In both runs PostgreSQL confirmed the frozen strength
+loads (+5.5 kg for A and +10.5 kg for B), the two Journal entries and
+two distinct plan occurrence credits. Both synthetic databases were
+removed after checking ownership and zero clients.
 
 ## J4 legacy Block B execution and progression
 
