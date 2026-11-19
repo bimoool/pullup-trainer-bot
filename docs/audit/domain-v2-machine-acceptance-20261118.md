@@ -378,6 +378,25 @@ file filter located neither split scenario. After correcting the filter,
 both scenarios completed. The isolated database was removed after
 ownership and zero-client checks.
 
+### J2 and J4 weighted course on a profile with existing history
+
+Chromium ran on the executable tree of protected `74a7c7b` with an
+M=25 profile, a 23-day-old plan and two earlier synthetic course
+sessions. Only the first week was materialized in the fixture. Opening
+Plan restored the missing `program_items` key and displayed the current
+week. The run captured both earlier Journal cards at that point.
+
+The simulated 1RM ladder confirmed +31 kg at body mass 70 kg. Session A
+recorded 17/17/17/19 and 5×5 at a prescribed +5.5 kg. The fixture shifted
+A's performed date three days back to model rest. B recorded 15×5 and
+5×3 at a prescribed +10.5 kg. The next B volume became 16×5.
+
+Both earlier cards matched the captured cards after A and after B.
+The Journal ended with four cards. PostgreSQL confirmed all 29 new
+results, the two original prescribed loads and distinct A and B credits.
+**Result — 1 passed in 12.6 s.** The synthetic database was removed after
+checking ownership and zero clients.
+
 ## J8 backdated workout on a profile with existing course history
 
 Chromium ran against API and frontend source `348d870` on a separate
