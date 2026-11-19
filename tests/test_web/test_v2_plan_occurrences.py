@@ -660,6 +660,25 @@ async def test_custom_plan_rejects_foreign_workout_and_bad_vector(session, user:
     })).status_code == 422
 
 
+@pytest.mark.parametrize("mixed_rotation", [False, True])
+async def test_custom_plan_rejects_empty_workout_without_creating_plan(session, user: User, mixed_rotation):
+    workout = await v2_post(session, user.telegram_id, "/api/v2/workouts", {"title": "Пустой шаблон"})
+    assert workout.status_code == 200
+    workout_ids = [workout.json()["id"]]
+    if mixed_rotation:
+        complete = await _user_workout(session, user)
+        workout_ids.insert(0, complete.id)
+
+    response = await v2_post(session, user.telegram_id, "/api/v2/custom-plans", {
+        "display_name": "Свой план", "workout_ids": workout_ids, "weeks": [2],
+    })
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "У выбранной тренировки нет упражнений"
+    plans = await v2_get(session, user.telegram_id, "/api/v2/custom-plans")
+    assert plans.status_code == 200
+    assert plans.json()["items"] == []
+
+
 # --- Перенос занятия (PL6) ------------------------------------------------------------------------
 
 

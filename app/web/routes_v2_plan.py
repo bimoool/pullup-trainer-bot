@@ -84,6 +84,11 @@ async def create_custom_plan(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
 
     plans = TrainingPlanRepository(session)
+    for workout_id in body.workout_ids:
+        # Hold the first exercise through the initial materialisation.
+        if await plans.first_complex_exercise_id(workout_id, lock=True) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У выбранной тренировки нет упражнений")
+
     plan = await plans.get_or_create_for_user(user.id)
     today = _plan_today(user)
     current_number = plan_week_number(plan.created_at.date(), today)
