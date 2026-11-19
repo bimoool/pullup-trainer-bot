@@ -214,6 +214,26 @@ check passed. The database was removed after ownership and zero-client checks.
 This covers one paired plan-storage representation with active subscription
 caches. Mixed legacy/v2 history was tested as a separate, single-profile case.
 
+### Follow-up at `bc37db1` — active v1 session from the V5.6 main slot
+
+The [course regression](../../tests/test_web/test_v2_course_v5.py) starts a v1
+V5.6 workout from an existing main occurrence and records one set. Plan
+convergence freezes two older aggregate rows with the session still active.
+The second convergence reports zero changes. The calendar transitions to
+November 1 and November 2 both preserve the original session ID, phase,
+prescription and first set. The course progression state and revision remain
+the same through convergence.
+
+Completing workout A twice advances the course revision once. The next A
+volume targets become 18/17/17/17, its strength load becomes 6.5 kg, and the
+next workout role is B. All nine set results and the original prescription
+remain in Journal. The original main occurrence has the only new credit.
+
+Both boundaries, the adjacent V5.6 A→B case and the plan convergence module
+passed on isolated synthetic PostgreSQL (**14 passed in 17.17 s**, no skips).
+The owner and zero-client checks passed before removal of the synthetic target.
+Cached WebView and staging cutover rehearsal remain open.
+
 ### Follow-up at `12805e8`: archived workout in mixed legacy and v2 history
 
 The [mixed-history regression](../../tests/test_web/test_canonical_history.py)
