@@ -432,6 +432,141 @@ async def test_inflight_v1_workout_completes_after_aged_plan_convergence(
     assert await _card(session, user, session_id) == card
 
 
+@pytest.mark.parametrize(
+    "started_at,expected_week",
+    [
+        pytest.param(datetime(2026, 10, 31, 23, 59, 55, tzinfo=UTC), 1, id="month-boundary"),
+        pytest.param(datetime(2026, 11, 1, 23, 59, 55, tzinfo=UTC), 2, id="week-boundary"),
+    ],
+)
+async def test_planned_v1_session_keeps_credit_through_aged_plan_convergence(
+    session,
+    monkeypatch,
+    started_at,
+    expected_week,
+):
+    from app.db.repositories import training_sessions
+    from app.services import live_session
+    from app.web import routes_v2
+    from tests.test_web import _premium
+    from tests.test_web._v2_client import v2_get, v2_post
+    from tests.test_web.test_v2_live_engine import REPS_2x8_R30, _builder
+    from tests.test_web.test_v2_live_phase_back import _log, _next, _to_rest_of_set
+    from tests.test_web.test_v2_training_session_v2 import _card
+
+    now = started_at
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
+    for module in (live_session, training_sessions, routes_v2, _premium):
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+
+    user = await _premium.create_premium_user(session, telegram_id=4242, username="aged_planned")
+    user.timezone = "UTC"
+    workout = await _builder(session, user, [REPS_2x8_R30], title="Турник у дома")
+    exercise = await session.scalar(
+        select(Exercise)
+        .join(ComplexItem, ComplexItem.exercise_id == Exercise.id)
+        .where(ComplexItem.complex_id == workout.id)
+    )
+    assert exercise is not None
+    plan = TrainingPlan(user_id=user.id, created_at=datetime(2026, 10, 26, 9, tzinfo=UTC))
+    session.add(plan)
+    await session.flush()
+    repo = TrainingPlanRepository(session)
+    week = await repo.create_plan_week(
+        training_plan_id=plan.id,
+        week_number=1,
+        start_date=plan.created_at.date(),
+        phase=WeekPhase.BASE,
+    )
+    aggregate = PlanItem(
+        training_plan_id=plan.id,
+        exercise_id=exercise.id,
+        complex_id=workout.id,
+        plan_week_id=week.id,
+        count_per_week=2,
+    )
+    session.add(aggregate)
+    await session.flush()
+    first_id = await _session_linked(
+        session, user, [aggregate], plan.created_at + timedelta(hours=1), exercise
+    )
+    await session.commit()
+
+    url = "/api/v2/sessions/live"
+    start_request = {
+        "client_session_id": str(uuid.uuid4()),
+        "plan_item_ids": [aggregate.id],
+    }
+    started = await v2_post(session, user.telegram_id, url, start_request)
+    assert started.status_code == 200, started.text
+    start = started.json()
+    assert start["engine_version"] == 1
+    session_id = start["id"]
+    assert (await _credits(session, user.id))[session_id] == aggregate.id
+    rest = await _to_rest_of_set(session, user, session_id, exercise.id)
+    assert rest["phase"]["name"] == "rest"
+    row = await session.get(TrainingSession, session_id)
+    snapshot = copy.deepcopy(row.prescription_snapshot)
+    assert snapshot is not None and row.performed_at == started_at
+
+    now += timedelta(seconds=10)
+    service = PlanConvergenceService(session)
+    current, changed = await service.converge_user_plan(training_plan_id=plan.id, today=now.date())
+    assert current.week_number == expected_week
+    assert changed.mutations > 0
+    await session.commit()
+    await session.refresh(aggregate)
+    credits = await _credits(session, user.id)
+    if expected_week == 1:
+        assert (aggregate.occurrence_index, credits[first_id]) == (1, aggregate.id)
+        credited_row = await session.get(PlanItem, credits[session_id])
+        assert credited_row is not None and (
+            credited_row.origin_plan_week_id,
+            credited_row.occurrence_index,
+        ) == (week.id, 2)
+    else:
+        assert aggregate.legacy_aggregate and aggregate.count_per_week == 2
+        assert (credits[first_id], credits[session_id]) == (None, aggregate.id)
+    _, repeated = await service.converge_user_plan(training_plan_id=plan.id, today=now.date())
+    assert repeated.mutations == 0
+    await session.commit()
+
+    replayed_start = await v2_post(session, user.telegram_id, url, start_request)
+    assert replayed_start.status_code == 200, replayed_start.text
+    assert replayed_start.json()["id"] == session_id
+    active = await v2_get(session, user.telegram_id, f"{url}/active")
+    assert active.status_code == 200, active.text
+    resumed = active.json()["session"]
+    for key in ("id", "engine_version", "phase", "phase_index", "blocks"):
+        assert resumed[key] == rest[key], key
+    ready = await _next(session, user, session_id, resumed["phase_index"])
+    go = await _next(session, user, session_id, ready["phase_index"])
+    assert (go["phase"]["name"], go["current_set_number"]) == ("go", 2)
+    await _log(session, user, session_id, exercise.id, 1, "6")
+    for _ in range(2):
+        done = await v2_post(
+            session, user.telegram_id, f"{url}/{session_id}/complete", {"abandoned": False}
+        )
+        assert done.status_code == 200 and done.json()["status"] == "completed", done.text
+
+    card = await _card(session, user, session_id)
+    assert card["title"] == "Турник у дома"
+    assert card["prescription_snapshot"] == snapshot and card["plan_item_id"] == credits[session_id]
+    assert [log["value"] for log in card["blocks"][0]["set_logs"]] == ["9.00", "6.00"]
+    assert await _credits(session, user.id) == credits
+
+    plan_response = await v2_get(session, user.telegram_id, "/api/v2/plan")
+    assert plan_response.status_code == 200, plan_response.text
+    summaries = plan_response.json()["plan"]["week_summaries"]
+    planned_week = next(summary for summary in summaries if summary["plan_week_id"] == week.id)
+    assert (planned_week["planned"], planned_week["completed"]) == (2, 2)
+
+
 async def test_fresh_inclusion_converges_to_occurrences_and_second_run_is_noop(session):
     user = await UserRepository(session).create(telegram_id=5151, username="fresh")
     program, _, _ = await _catalogue(session)
