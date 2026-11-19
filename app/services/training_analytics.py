@@ -3,11 +3,11 @@
 домена app.domain.training_analytics."""
 
 from datetime import date, datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot.timezones import DEFAULT_TIMEZONE
+from app.bot.timezones import resolve_timezone
 from app.db.repositories.training_sessions import (
     ExerciseCatalogInfo,
     SessionBlockDetail,
@@ -29,19 +29,6 @@ from app.domain.training_analytics import (
 from app.domain.training_session_v2 import SetStatus, effective_duration_seconds
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.training_session_v2 import block_outcomes
-
-
-def resolve_timezone(name: str | None) -> ZoneInfo:
-    """Часовой пояс пользователя; пустой/невалидный — проектный дефолт
-    (app.bot.timezones.DEFAULT_TIMEZONE), не падение."""
-    for candidate in (name, DEFAULT_TIMEZONE):
-        if not candidate:
-            continue
-        try:
-            return ZoneInfo(candidate)
-        except (ZoneInfoNotFoundError, ValueError, OSError):
-            continue
-    return ZoneInfo("UTC")
 
 
 def _performed(logs) -> list[AnalyticsSetLog]:

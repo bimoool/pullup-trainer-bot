@@ -10,7 +10,7 @@
 принадлежность зоны здесь не важна, важно только само смещение."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DEFAULT_TIMEZONE = "Europe/Moscow"
 
@@ -166,6 +166,18 @@ CITY_TIMEZONES: dict[str, str] = {_normalize(city): tz for city, tz in _RAW_CITY
 def resolve_city_timezone(raw_city: str) -> str:
     """Точное совпадение по нормализованному имени; не распознан — Москва."""
     return CITY_TIMEZONES.get(_normalize(raw_city), DEFAULT_TIMEZONE)
+
+
+def resolve_timezone(name: str | None) -> ZoneInfo:
+    """Часовой пояс пользователя с проектным значением по умолчанию."""
+    for candidate in (name, DEFAULT_TIMEZONE):
+        if not candidate:
+            continue
+        try:
+            return ZoneInfo(candidate)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            continue
+    return ZoneInfo("UTC")
 
 
 def format_timezone_label(iana_name: str) -> str:

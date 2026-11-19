@@ -72,8 +72,11 @@ class ManualSessionService:
         self._sessions = TrainingSessionRepository(session)
 
     async def record(self, user_id: int, request: ManualSessionRequest, *, now: datetime) -> ManualSessionOutcome:
-        if request.client_session_id is not None:
+        if request.client_session_id is not None or (
+            request.source == SessionSource.PLAN and request.program_inclusion_id is not None
+        ):
             await lock_user_starts(self._session, user_id)
+        if request.client_session_id is not None:
             existing = await self._sessions.get_by_client_session_id(user_id, request.client_session_id)
             if existing is not None:
                 return await self._replay(existing.id, user_id)
@@ -110,6 +113,7 @@ class ManualSessionService:
             completed_at=request.completed_at, activity_type=request.activity_type,
             duration_seconds=request.duration_seconds if request.activity_type is not None else None,
             targets_by_block=targets, workout_snapshot=workout_snapshot, client_session_id=request.client_session_id,
+            timezone=request.timezone,
         )
         if inclusion_not_found:
             return ManualSessionOutcome(None, inclusion_not_found=True)

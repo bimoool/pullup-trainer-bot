@@ -102,7 +102,9 @@ Rules (decided, independent of the value):
   **«не успеть на этой неделе»** (state `infeasible`), not as debt and not as missed.
   Example (value 3): today Wed, last main Mon → available Thu → Thu, Sun → feasible 2 of 3.
 - **K3** Manual logging (post-factum) of a main session is allowed even if it violates spacing
-  (it already happened); it is flagged `spacing_violation=true` for progression to see.
+  (it already happened). The server evaluates completed main history through the performed time,
+  using the same local date and minimum interval as K1. It stores `spacing_violation=true` when
+  the performed date is before the available date. The flag records the result of this check at creation.
 - **K4** Optional and custom workouts are not in the `main` group unless their program says so.
 
 ## 5. Plan, PlanWeek, PlanItem, completion credit

@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.bot.handlers.workout import resolve_rest_day_notice
-from app.db.models import Baseline, User
+from app.db.models import Baseline, User, Workout, WorkoutSet, WorkoutStatus
 from app.db.models_program import (
     Complex,
     ComplexItem,
@@ -33,6 +33,7 @@ from app.services import live_session
 from app.web import routes as legacy_routes
 from app.web import routes_v2, routes_v2_live
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
+from tests.test_web.test_v2_sessions import _exercise_ids_by_role, _sets_block
 
 MON = datetime(2026, 10, 5, 10, tzinfo=UTC)  # понедельник недели плана
 TUE, WED, THU, FRI = (MON + timedelta(days=n) for n in (1, 2, 3, 4))
@@ -322,6 +323,82 @@ async def test_k2_fresh_wednesday_third_main_is_infeasible(session, user: User, 
     states = [i["state"] for i in _week_items(plan, 1)]
     assert states == ["available", "available", "infeasible"]  # Ср, Сб, «не успеть на этой неделе»
     assert _summary(plan, 1)["infeasible"] == 1
+
+
+def _retrospective_main(inclusion: dict, when: datetime) -> dict:
+    roles = _exercise_ids_by_role(inclusion)
+    return {
+        "source": "plan", "performed_at": when.isoformat(),
+        "program_inclusion_id": inclusion["id"], "client_session_id": str(uuid.uuid4()),
+        "blocks": [
+            _sets_block(roles["block_a"], [10, 10, 10], 12),
+            _sets_block(roles["block_b"], [3, 3, 3, 3], 6),
+        ],
+    }
+
+
+@pytest.mark.parametrize("recorded_at, violated", [(WED, True), (THU, False)])
+async def test_j11_retroactive_main_uses_history_at_the_performed_date(session, user: User, clock, recorded_at, violated):
+    inclusion = await _enrol(session, user, clock)
+    slots = _week_items(await _plan(session, user), 1)
+    first = await _start(session, user, [slots[0]["id"]])
+    assert first.status_code == 200, first.text
+    await _finish(session, user, first, performed_at=MON)
+
+    clock(WED)
+    blocked = await _start(session, user, [slots[1]["id"]])
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["available_from"] == "2026-10-08"
+
+    clock(FRI)
+    later = await _start(session, user, [slots[1]["id"]])
+    assert later.status_code == 200, later.text
+    await _finish(session, user, later, performed_at=FRI)
+    payload = _retrospective_main(inclusion, recorded_at)
+    logged = await v2_post(session, user.telegram_id, "/api/v2/sessions", payload)
+    assert logged.status_code == 200, logged.text
+    record_id = logged.json()["id"]
+
+    replayed = await v2_post(session, user.telegram_id, "/api/v2/sessions", payload)
+    assert replayed.status_code == 200 and replayed.json()["id"] == record_id
+    assert replayed.json()["progression_skipped_reason"] == "already_recorded"
+    row = await session.get(TrainingSession, record_id)
+    assert row.spacing_violation is violated and row.plan_item_id is None
+    assert not (await session.get(TrainingSession, first.json()["id"])).spacing_violation
+    assert not (await session.get(TrainingSession, later.json()["id"])).spacing_violation
+    journal = await v2_get(session, user.telegram_id, "/api/v2/sessions?status=completed")
+    assert journal.status_code == 200, journal.text
+    assert {card["id"] for card in journal.json()["sessions"]} == {
+        first.json()["id"], later.json()["id"], record_id,
+    }
+    assert len(journal.json()["sessions"]) == 3
+
+
+@pytest.mark.parametrize("offset_minutes, violated", [(-1, True), (0, False)])
+async def test_j11_retroactive_main_uses_legacy_history_and_local_midnight(
+    session, user: User, clock, offset_minutes, violated,
+):
+    inclusion = await _enrol(session, user, clock)
+    user.timezone = "Asia/Yekaterinburg"
+    prior_at = datetime(2026, 10, 31, 18, 59, tzinfo=UTC)
+    baseline = Baseline(user_id=user.id, performed_at=prior_at, reps=10)
+    session.add(baseline)
+    await session.flush()
+    workout_set = WorkoutSet(user_id=user.id, started_from_baseline_id=baseline.id, set_number=1)
+    session.add(workout_set)
+    await session.flush()
+    session.add_all([
+        Workout(user_id=user.id, workout_set_id=workout_set.id, performed_at=at, status=WorkoutStatus.COMPLETED)
+        for at in (prior_at, datetime(2026, 11, 4, 8, tzinfo=UTC))
+    ])
+    await session.flush()
+
+    midnight = datetime(2026, 11, 2, 19, tzinfo=UTC)
+    recorded_at = midnight + timedelta(minutes=offset_minutes)
+    logged = await v2_post(session, user.telegram_id, "/api/v2/sessions", _retrospective_main(inclusion, recorded_at))
+    assert logged.status_code == 200, logged.text
+    row = await session.get(TrainingSession, logged.json()["id"])
+    assert row.spacing_violation is violated
 
 
 async def test_admin_bypasses_rest(session, user: User, clock, monkeypatch):
