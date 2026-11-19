@@ -1,7 +1,7 @@
 """#309 / J2: identical API events, current occurrences vs reconstructed aged storage.
 
-This checks aggregate/M2M/cache representation convergence and cross-view history,
-not old-writer replay, progression migration, or the complete aged-persona matrix.
+This checks aggregate/M2M/cache representation convergence, cross-view history,
+and preservation of synthetic paid periods and entitlement caches.
 Both users explicitly keep the SAME legacy program version; V5.6 is not rewritten.
 """
 
@@ -9,9 +9,10 @@ import copy
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select, text
 
-from app.db.models import SubscriptionStatus
+from app.db.models import Subscription, SubscriptionSource, SubscriptionStatus
 from app.db.models_program import (
     PlanItem,
     ProgramInclusion,
@@ -24,6 +25,7 @@ from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.services import live_session, program_inclusion
 from app.services.plan_convergence import PlanConvergenceService
+from app.services.subscription import SubscriptionService
 from app.web import routes_v2
 from tests.test_web._v2_client import v2_get, v2_post
 from tests.test_web.test_v2_plan_occurrences import _pullups_program
@@ -49,6 +51,14 @@ async def _history(session, user_id):
     for key, sql in queries.items():
         result[key] = (await session.execute(text(sql), {"uid": user_id})).scalars().all()
     return result
+
+
+async def _subscription_rows(session, user_id):
+    result = await session.execute(
+        text("SELECT to_jsonb(s) FROM subscriptions s WHERE s.user_id=:uid ORDER BY s.id"),
+        {"uid": user_id},
+    )
+    return result.scalars().all()
 
 
 def _projection(plan, inclusion_id, event_ids):
@@ -112,8 +122,20 @@ async def _assert_cross_view_history(session, telegram_id, event_ids):
     ] == [("Подтягивания", 2, 80)]
 
 
-async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(session, monkeypatch):
+@pytest.mark.parametrize(
+    "status,expires_at",
+    [
+        pytest.param(
+            SubscriptionStatus.ACTIVE, datetime(2100, 1, 1, tzinfo=UTC), id="active-payer"
+        ),
+        pytest.param(SubscriptionStatus.EXPIRED, MON - timedelta(days=1), id="expired-paid-period"),
+    ],
+)
+async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(
+    session, monkeypatch, status, expires_at
+):
     now = MON
+    entitled = status is SubscriptionStatus.ACTIVE
 
     class FixedDatetime(datetime):
         @classmethod
@@ -133,9 +155,20 @@ async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(ses
         user.timezone = "UTC"
         await UserRepository(session).update_subscription_cache(
             user.id,
-            status=SubscriptionStatus.ACTIVE,
-            expires_at=datetime(2100, 1, 1, tzinfo=UTC),
+            status=status,
+            expires_at=expires_at,
         )
+        session.add(
+            Subscription(
+                user_id=user.id,
+                status=SubscriptionStatus.ACTIVE,
+                source=SubscriptionSource.ROBOKASSA,
+                started_at=MON - timedelta(days=31),
+                ends_at=expires_at,
+                payment_reference=f"synthetic-convergence-{telegram_id}",
+            )
+        )
+        assert SubscriptionService.is_entitled(user, now=FRI) is entitled
         plan = TrainingPlan(user_id=user.id, created_at=PLAN_CREATED)
         session.add(plan)
         await session.flush()
@@ -276,6 +309,8 @@ async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(ses
         for i in inclusions
     ]
     entitlements = [(u.subscription_status, u.subscription_expires_at) for u in users]
+    paid_periods = {user.id: await _subscription_rows(session, user.id) for user in users}
+    assert all(len(rows) == 1 for rows in paid_periods.values())
     access = program.access_level
     now = FRI
     projections, counters = [], []
@@ -298,7 +333,9 @@ async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(ses
         await session.commit()
         response = await v2_get(session, user.telegram_id, "/api/v2/plan")
         assert response.status_code == 200, response.text
-        projection = _projection(response.json()["plan"], inclusion.id, ids)
+        payload = response.json()["plan"]
+        assert [entry["access_level"] for entry in payload["program_inclusions"]] == ["free"]
+        projection = _projection(payload, inclusion.id, ids)
         await session.refresh(inclusion)
         await session.refresh(user)
         assert (
@@ -327,6 +364,10 @@ async def test_same_api_history_converges_to_equal_fresh_and_aged_plan_state(ses
             create_until_week=5,
         )
         assert again.mutations == 0, again.as_dict()
+        await session.refresh(user)
+        assert (user.subscription_status, user.subscription_expires_at) == (status, expires_at)
+        assert SubscriptionService.is_entitled(user, now=FRI) is entitled
+        assert await _subscription_rows(session, user.id) == paid_periods[user.id]
         await _assert_cross_view_history(session, user.telegram_id, ids)
     assert counters == [("active", 2, 2, THU)] * 2
     assert projections[0] == projections[1]
