@@ -128,7 +128,7 @@ so the original report-only checkpoint needed no application repair or new test.
 | §3 deterministic backfill and apply-again zero | TARGETED_PASS for the selected history runner; plan runtime PASS | No claim that every backfill ambiguity/type or migration was separately rerun |
 | §4 single canonical history / legacy dual-write | TARGETED_PASS for six service tests and the direct aged rehearsal | Cross-view Journal/Profile/Analytics totals across all personas and cutover readiness still UNKNOWN |
 | §5 aged plan convergence / history credits | TARGETED_PASS for eight plan service tests | One paired same-event current/future plan regression now passes (follow-up below); the full rehearsal persona set remains UNKNOWN |
-| §6 in-flight v1 and cached old clients | SOURCE_ONLY contract; NOT_TESTED in this task | Old bundle/offline queues, active v1 completion at cutover, new v2 starts; keep v1 until separate acceptance |
+| §6 in-flight v1 and cached old clients | TARGETED_PASS at `32c9a1a`: synthetic in-flight direct v1 session through aged plan convergence and API replay (below) | Actual cached WebView and cutover rehearsal remain open. Keep v1 until separate acceptance. |
 | §7 subscription/access preservation | TARGETED_PASS for exact fixture fingerprints/cache/access assertions | Not a global audit of all campaign migration writes or all entitled accounts; full persona before/after comparison still required |
 | §8 rehearsal and rollback | Partial synthetic migration/convergence PASS only | No production-shaped dump used, no restore drill, no staging cutover or flag change; mandatory full rehearsal remains incomplete |
 | Physical R, native Telegram, audible timer and watch | UNKNOWN | Device evidence remains separate; no owner manual QA, new chat or relay requested by this task |
@@ -247,3 +247,24 @@ boundary cases passed together on isolated synthetic PostgreSQL:
 **4 passed, 1 existing Starlette deprecation warning**, no skips. Ruff check
 and format check passed. The owned database was removed after verifying
 ownership and zero clients. This extends the paired plan representation proof.
+
+### Follow-up at `32c9a1a`: active v1 session across aged plan convergence
+
+The [in-flight regression](../../tests/test_services/test_plan_convergence_v2.py)
+starts a direct workout through the old API request and records one set before
+converging an aged plan. Fixed clocks exercise October 31, November 1 and
+November 2, 2026. The first two dates expand the fourth week and transfer
+three distinct credits from the linked sessions. On Monday the fourth week
+freezes as history and no credit is transferred. The in-flight direct session
+receives no plan credit. The second convergence reports zero changes in each
+case. Reopening the active session returns the same v1 ID,
+phase, targets and recorded set. Replaying the first set and a stale phase
+request through v1 produces no duplicate or phase change. After the second
+set, the Journal preserves the frozen prescription and both results. A
+subsequent v2 start has a new session ID and leaves that Journal card unchanged.
+
+The plan convergence module and the adjacent v1-compatibility case passed
+on isolated synthetic PostgreSQL, **12 passed in 15.78 s**, no skips. Ruff and diff
+checks passed. The owned database was removed after verifying ownership and
+zero clients. This exercises the v1 HTTP contract during plan convergence.
+The fixture does not run a cached WebView or change a deployment flag.
