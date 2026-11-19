@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { answerChecksV2, noWakeLock } from "../fixtures/builderFlow";
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
+import { selectMetric } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 
 /**
@@ -111,7 +112,7 @@ test("V5.6 на свежем профиле: онбординг → програ
 
   const started = page.waitForResponse((r) => /\/api\/v2\/sessions\/live$/.test(r.url()) && r.status() === 200);
   await page.getByRole("button", { name: "Начать", exact: true }).click();
-  await started;
+  const { id: sessionId } = await (await started).json();
   const planItems = (await api(page, "/api/v2/plan")).plan.plan_items as { program_inclusion_id: number | null }[];
   inclusionId = planItems.find((item) => item.program_inclusion_id !== null)?.program_inclusion_id ?? null;
   expect(inclusionId).not.toBeNull();
@@ -119,6 +120,8 @@ test("V5.6 на свежем профиле: онбординг → програ
   // Тренировка A: объём 7/7/7/7+ (отдых 4:00), 15:00 до силы, сила 5/5/5/5/5–8 (отдых 3:00).
   const A = "Подтягивания — объём";
   const S = "Подтягивания — сила";
+  // У измеренной сессии должно быть хотя бы полминуты, чтобы минуты в Аналитике не округлились до нуля.
+  await page.waitForTimeout(31_000);
   await playSets(page, [
     { exercise: A, target: "Подход 1/4 · Цель: 7 повт.", value: "7", restAfter: rest(4) },
     { exercise: A, target: "Подход 2/4 · Цель: 7 повт.", value: "7", restAfter: rest(4) },
@@ -186,6 +189,28 @@ test("V5.6 на свежем профиле: онбординг → програ
     await expect(page.getByText(`старт с ${available.getDate()} `, { exact: false })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
+
+  const { sessions } = await api(page, "/api/v2/sessions?status=completed");
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]).toMatchObject({ id: sessionId, title: "Подтягивания" });
+  const { duration_seconds: seconds, performed_at: performedAt } = sessions[0];
+  expect(seconds).toBeGreaterThanOrEqual(30);
+  const minutes = Math.floor((seconds + 30) / 60);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(performedAt));
+  const { metrics, distribution } = await api(page, `/api/v2/analytics/training?from=${day}&to=${day}`);
+  expect(metrics).toMatchObject({ total_workouts: 1, total_minutes: minutes, without_duration: 0 });
+  expect(distribution).toMatchObject({ total_workouts: 1, total_minutes: minutes });
+  expect(distribution.categories.filter((category: { workouts: number }) => category.workouts > 0))
+    .toMatchObject([{ name: "Подтягивания", workouts: 1, minutes }]);
+
+  await page.getByRole("button", { name: "Аналитика", exact: true }).click();
+  await expect(page.getByTestId("analytics-metric-total")).toContainText("Всего тренировок: 1");
+  const legend = page.getByTestId("analytics-legend-item");
+  await expect(legend).toHaveCount(1);
+  await expect(legend).toContainText("Подтягивания");
+  await selectMetric(page, "Минуты");
+  await expect(page.getByTestId("analytics-metric-total")).toContainText(`Всего минут: ${minutes} мин`);
+  await expect(legend).toContainText(`${minutes} мин`);
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);
