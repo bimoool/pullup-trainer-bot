@@ -269,6 +269,21 @@ prescribed B as 15×5 with a separate 5×3 strength block at +10.5 kg.
 **Result — 1 passed in 10.2 s.** The synthetic database was removed
 after checking ownership and zero clients.
 
+### J4 weighted continuation from A to B at M=25
+
+A separate Chromium run on the same executable tree completed A, then
+shifted only its performed date three days back in the synthetic
+database to model the required rest. The Plan opened B. The prescreen,
+Live Engine and frozen recipe agreed on 15×5 volume and 5×3 at +10.5 kg.
+The browser checked the one-minute volume rest and recorded all 20 B
+results. Confirming technique and rest moved the next session to A and
+updated the stored Volume B target to 16×5.
+
+The Journal and PostgreSQL preserved the A recipe at +5.5 kg and the B
+recipe at +10.5 kg, with all 29 results and two distinct occurrence
+credits. **Result — 1 passed in 13.1 s.** The synthetic database was
+removed after checking ownership and zero clients.
+
 ### J4 V5.6 transition and starting target cap
 
 Two further Chromium runs on the `c360d2a` executable tree used separate
