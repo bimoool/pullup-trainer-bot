@@ -80,6 +80,27 @@ a label test or by an aggregate CI count. No source absence above is a claim tha
 all possible tests were exhaustively searched; these are concrete acceptance
 **evidence gaps** to resolve before writing any additional tests.
 
+## J11 start availability at local midnight
+
+The [occurrence tests](../../tests/test_web/test_v2_plan_occurrences.py) check
+the same REST limit through the Plan API, Live start, legacy HTTP and the bot
+notice. In Yekaterinburg, a session at October 31 19:30 UTC belongs to
+November 1 locally, so the next start opens at November 4 00:00 local time.
+In Los Angeles, a session at October 31 06:30 UTC belongs to October 30
+locally. The next start opens at November 2 00:00 local time, after the clock
+change.
+
+In each case all paths report the same date one minute before availability.
+At midnight the same planned occurrence becomes available and receives the
+new session's credit. The legacy endpoint returns `ready` and the bot notice
+clears. The verification called the bot notice helper without sending Telegram
+messages.
+
+Both boundary cases and the adjacent UTC, capacity and bot notice checks
+passed on isolated synthetic PostgreSQL (**9 passed in 7.35 s**, no skips).
+The target was removed after ownership and zero-client checks. The J11
+post-factum flag, UI and physical-device traces remain open.
+
 ## Focused execution and isolation
 
 The existing local environment was loaded without printing its values. Both the
