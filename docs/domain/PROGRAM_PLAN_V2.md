@@ -171,6 +171,9 @@ CustomPlan (user-owned)
   preferred_weekdays: int[] | null                optional placement hint
 ```
 
+**Creating a custom plan** returns 422 before storing the plan or its occurrences
+if any selected workout has no exercises.
+
 **Stopping a custom plan** (`POST /api/v2/custom-plans/{id}/deactivate`, owner only, else 404):
 `is_active = false` — an inactive custom plan never materialises new occurrences; its uncredited
 current/future occurrences are soft-removed (PL9); credited occurrences, past weeks and sessions are

@@ -571,11 +571,14 @@ class TrainingPlanRepository:
         )
         return set(result.scalars().all())
 
-    async def first_complex_exercise_id(self, complex_id: int) -> int | None:
-        result = await self._session.execute(
+    async def first_complex_exercise_id(self, complex_id: int, *, lock: bool = False) -> int | None:
+        query = (
             select(ComplexItem.exercise_id)
             .where(ComplexItem.complex_id == complex_id)
             .order_by(ComplexItem.order_index)
-            .limit(1),
+            .limit(1)
         )
+        if lock:
+            query = query.with_for_update(read=True, key_share=True)
+        result = await self._session.execute(query)
         return result.scalar_one_or_none()
