@@ -139,6 +139,26 @@ The second convergence reported zero mutations in both runs. Each synthetic
 database was removed after verifying ownership and zero clients. Native
 Telegram and the staging cutover rehearsal remain open.
 
+### Offline completion of an unplanned v1 session during convergence
+
+Chromium ran the historical `020ca64` bundle against the protected
+`27b9852` runtime. One synthetic profile opened the same workout that
+was present in Plan and started it from Workout Detail. The old client
+recorded eight, five and four repetitions, then queued completion offline.
+
+Plan convergence split a two-session weekly aggregate while the device
+was offline. It credited the earlier planned session to the first
+occurrence, and a second apply reported zero changes. Reopening online
+sent one completion request for the same direct v1 session. The returned
+Journal card retained the three results, effort of three and note.
+PostgreSQL and the Plan response showed a single credit from the earlier
+planned session, leaving the count at 1/2.
+
+**Result — 1 passed in 7.4 s.** The first harness attempt checked session
+source on the active response. The passing run checked it in PostgreSQL
+and the completed Journal card. The synthetic database was removed
+after verifying ownership and zero clients.
+
 ## Journey-to-test mapping and remaining cells
 
 Every entry below is SOURCE_ONLY except explicitly identified focused runs.
@@ -391,6 +411,23 @@ server acknowledged completion. The passing run waited for that acknowledgement.
 The database was removed after verifying ownership and zero clients. This covers
 browser tab reopening and reload on one aged profile. Native Telegram background
 return and audible cues still need device evidence.
+
+### J5 reopening after the rest between two blocks
+
+One Chromium run on protected runtime `27b9852` used a synthetic profile
+with two earlier Journal cards. After recording three repetitions, the
+browser confirmed that the server had entered a six-second block rest.
+It closed the tab and waited until that server deadline expired.
+
+The same session reopened during the five-second prep of the second
+block. The server anchored prep to the preceding rest deadline, and the
+visible timer matched the remaining time within one second. The plank
+then ran and saved five seconds automatically. The Journal retained both
+earlier cards and saved the new results in one card. The Plan reported
+exactly one credited occurrence and the active session cleared.
+
+**Result — 1 passed in 21.0 s.** The synthetic database was removed
+after verifying ownership and zero clients.
 
 ## J10 date and result edits on Live Engine v2
 
