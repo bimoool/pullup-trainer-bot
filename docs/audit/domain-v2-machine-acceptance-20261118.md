@@ -52,6 +52,34 @@ PR #430 head `0dede8f003e85a1bb79b91d0218d4da4e94be8ff`:
 No backend or frontend full suite was rerun for the original report-only task. Current report
 PR documentation checks and final integration review are separate integration work.
 
+## Historical v1 Mini App bundle against the current API
+
+The frontend was built with `npm ci` and `npm run build` from
+`020ca64e05f35096dca4d449350d2db395b157ba`, the parent of the Live Engine v2
+screen introduction. Its built JavaScript SHA-256 was
+`3e6909b43b3f2ffe66c5ae027a400e47519a0fbc4b3b32cccd895e5083553164`.
+The API ran from `d230ea984835638fbe48000b635e0c24ea1b230e` and served that
+historical bundle from the same loopback origin. The only fixture substitutions
+were the Telegram bridge and test identity. HTTP and PostgreSQL were real.
+
+On a migration-only PostgreSQL target, six synthetic users were seeded with
+`scripts.e2e_seed.py session_recovery`. The original scenarios ran in Chromium
+155 at 320 and 390 px, with one worker and no retries.
+
+- The [offline-set scenario](https://github.com/bimoool/pullup-trainer-bot/blob/020ca64e05f35096dca4d449350d2db395b157ba/webapp-frontend/e2e/scenarios/parity/live-set-nav.spec.ts)
+  ran in two themes at each width. It queued the first result offline and
+  synchronized it after reconnect. Reopening the set kept its value, and each
+  completed session stored `[8, 5, 4]` in order.
+- The [offline-finish scenario](https://github.com/bimoool/pullup-trainer-bot/blob/020ca64e05f35096dca4d449350d2db395b157ba/webapp-frontend/e2e/scenarios/parity/live-finish.spec.ts)
+  reopened the Mini App after queuing completion and closing it offline. Each
+  width produced a single successful completion with the original note.
+
+**Result — 6 passed in 17.9 s, no skips.** A separate database check found six
+unique completed v1 sessions, six distinct plan credits, all twelve set values
+and both completion notes. The owned target was removed after checking ownership
+and zero clients. This is machine evidence for the historical bundle under
+MIGRATION_V2 §6. Real Telegram WebView and staging cutover rehearsal remain open.
+
 ## Journey-to-test mapping and remaining cells
 
 Every entry below is SOURCE_ONLY except explicitly identified focused runs.
