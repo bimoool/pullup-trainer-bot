@@ -215,6 +215,20 @@ ownership and zero-client checks.
 
 Native Telegram and the complete profile matrix still need separate evidence.
 
+### J6 title and edited result on a profile with history
+
+On the executable tree of protected `2e910bd`, Chromium built «Силовая J6»
+as a two-set workout and created a four-week plan with 2/2/0/2 occurrences.
+The same title appeared in Detail, Plan, the start screen, Live Engine v2,
+the completion summary and the Journal. The summary showed two sets with
+eight and seven repetitions.
+
+Editing the second result to nine kept the session ID, workout identity,
+prescription snapshot and single credited occurrence. The named Journal
+card showed eight and nine. The Plan and both earlier cards stayed intact.
+**Result — 1 passed in 6.8 s.** The synthetic database was removed after
+verifying ownership and zero clients.
+
 ## J3 W-ladder with all rests elapsed
 
 The [fresh journey](../../webapp-frontend/e2e/scenarios/fix-wave1/fresh-install-content.spec.ts)
