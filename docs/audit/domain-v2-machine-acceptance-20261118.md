@@ -308,6 +308,26 @@ the zero baseline, both sets of results and one plan credit.
 **Result — 1 passed in 39.5 s.** The synthetic database was removed after
 verifying ownership and zero clients.
 
+### J1 trial and course state after opening the app in a new tab
+
+On the executable tree of protected `1867853`, Chromium started with
+an empty user database, recorded a zero baseline and completed the
+course's first V5.6 workout through both blocks. After onboarding the
+subscription endpoint showed an active trial. PostgreSQL confirmed
+that the trial covered exactly seven days and that the user's expiry
+matched the trial end. The fixture used no paid subscription rows.
+
+Opening the app in a new browser tab retained the subscription status
+and expiry. Plan still showed one of two occurrences completed,
+Journal still showed one named course workout and Analytics still
+counted one workout. The original tab had also verified the measured
+duration in Analytics and the Journal details for both sets of results.
+PostgreSQL confirmed the nine saved results and one occurrence credit.
+
+**Result — 1 passed in 41.8 s.** The synthetic database was removed
+after verifying ownership and zero clients. Native Telegram acceptance
+remains open.
+
 ### J4 continuation from A to B at M=0
 
 A separate Chromium run on protected `397594b` completed both sessions.
