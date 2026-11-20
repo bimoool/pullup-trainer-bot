@@ -539,6 +539,21 @@ plan credit or spacing-violation flag. **Result — 1 passed in 6.3 s.**
 The synthetic database was removed after verifying ownership and zero
 clients.
 
+### J8 preserving the historical record after archiving its workout
+
+On the executable tree of protected `369c1a3`, Chromium logged an owned
+two-set workout for the previous day and archived its definition through
+Builder. The archive request returned 204 and the direct workout lookup
+returned 404. After reload, the Journal showed the original title,
+prescription and results of eight and seven repetitions. The workout
+link disappeared from both the Journal sheet and the session details.
+
+Both original Journal cards and the full Plan response stayed identical.
+PostgreSQL confirmed that the definition was archived and the backdated
+record remained stored without a course, plan credit or spacing-violation
+flag. **Result — 1 passed in 6.7 s.** The synthetic database was removed
+after verifying ownership and zero clients.
+
 ## J9 external activity alongside a credited course workout
 
 The [J9 regression](../../tests/test_web/test_j9_external_activity_isolation.py)
