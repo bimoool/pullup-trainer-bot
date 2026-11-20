@@ -48,15 +48,39 @@ remain outside main pending review; they are not broken local-file links.
 | `proposals-for-paths.md` | Proposals are distinct from accepted product requirements |
 | `links.md` | Historical paths-table pointer; no delivery/access proof here |
 
+## Historical coverage review — 2026-11-20
+
+The review used the status columns of `coverage.csv` and
+`acceptance-matrix.csv` at archive head `c584cafd`. The coverage register
+has 105 distinct scenario IDs.
+
+| Scenario status | Observed evidence | Documentary evidence | Unknown evidence | Total |
+| --- | ---: | ---: | ---: | ---: |
+| OBSERVED | 87 | 0 | 0 | 87 |
+| PARTIAL | 9 | 1 | 0 | 10 |
+| BLOCKED | 0 | 1 | 7 | 8 |
+| Total | 96 | 2 | 7 | 105 |
+
+Nine partial scenarios have observed evidence for part of their scope.
+Three blocked scenarios have no observation reference. The archive's
+separate acceptance register has 14 `ВЫПОЛНЕНО`, seven `ЧАСТИЧНО` and
+two `НЕДОСТУПНО` rows. These counts describe the historical registers
+at the pinned head. The review used aggregate status fields and checked
+neither the underlying media nor the reference app.
+
+The later November 10 audit leaves C09 (skill-template instantiation)
+and C10 (completion-to-plan-credit comparison) UNKNOWN. Keep these
+items open in #348 and use the November report for its actual execution
+scope. [November audit](../../audit/crimpd-20261110/REPORT.md#unexecuted-scope-and-ledger)
+
 ## Related tasks and next acceptance
 
 - #347 is the research and path-agreement umbrella; this index does not close it.
 - #348 has historical source material, but complete current coverage is unproven.
-- #349 comparison Sheet: the archive lacks a separate delivered Sheet pointer.
-- #350 paths Sheet: a historical pointer exists. Archive inventory alone does
-  not establish live access, ownership, structure, delivered contents or product
-  acceptance. Check each task's current status separately; do not infer absence
-  or create duplicates merely because an issue lacks a delivered link.
+- #349 comparison Sheet: its technical delivery was verified and closed.
+  The approved private result stays in place. [Completion receipt](https://github.com/bimoool/pullup-trainer-bot/issues/349#issuecomment-6952482107)
+- #350 paths Sheet: its technical draft was verified and closed. Proposed
+  journeys still require agreement under #347. [Completion receipt](https://github.com/bimoool/pullup-trainer-bot/issues/350#issuecomment-6949118811)
 
 The original PR stays draft. Before transferring any more files, select a
 bounded subset, review its contents and evidence provenance, retain UNKNOWN
