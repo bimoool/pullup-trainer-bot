@@ -1,4 +1,4 @@
-"""Seed only the reserved fresh identity in the fixed local browser diagnostic DB."""
+"""Seed the three reserved release profiles in the fixed browser diagnostic DB."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -9,7 +9,12 @@ from sqlalchemy import text
 from app.config import settings
 from app.db.base import async_session_factory
 from scripts.qa.identities import QA_IDENTITIES
-from scripts.qa.provision_staging_identities import _purge, provision_fresh_active
+from scripts.qa.provision_staging_identities import (
+    _purge,
+    provision_aged_active,
+    provision_aged_legacy_snapshot,
+    provision_fresh_active,
+)
 
 
 async def main() -> None:
@@ -23,9 +28,15 @@ async def main() -> None:
             await session.execute(text("select current_database()"))
         ).scalar() != "pullup_qa_fresh_local":
             raise RuntimeError("local fresh diagnostic database mismatch")
-        identity = QA_IDENTITIES["qa_fresh_active"]
-        await _purge(session, identity)
-        await provision_fresh_active(session, identity, datetime.now(UTC))
+        fresh = QA_IDENTITIES["qa_fresh_active"]
+        aged = QA_IDENTITIES["qa_aged_active"]
+        legacy = QA_IDENTITIES["qa_aged_legacy_snapshot"]
+        now = datetime.now(UTC)
+        for identity in (fresh, aged, legacy):
+            await _purge(session, identity)
+        await provision_fresh_active(session, fresh, now)
+        await provision_aged_active(session, aged, now, aged_days=26, visited_weeks=1)
+        await provision_aged_legacy_snapshot(session, legacy, now, visited_weeks=1)
         await session.commit()
 
 
