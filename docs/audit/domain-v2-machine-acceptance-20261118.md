@@ -246,6 +246,20 @@ The preceding elapsed-rest run covers all 16 automatic waits.
 **Result — 1 passed in 10.8 s.** The synthetic database was removed after
 verifying ownership and zero clients.
 
+### J3 restoring the active W-ladder after reload
+
+On the executable tree of protected `595e1e2`, Chromium reloaded during
+the first rest after the server had recorded five repetitions. The normal
+active-session response restored the same session, workout title and first
+result. Chromium continued from the next set without issuing another start
+request.
+
+The completion summary retained the title and all 17 results. The Journal
+showed one matching card with all 17 targets and results. Both older cards
+stayed identical and the active session cleared. **Result — 1 passed in
+11.2 s.** The synthetic database was removed after verifying ownership and
+zero clients.
+
 ## J1 and J4 with a zero baseline in V5.6
 
 Chromium ran the fresh onboarding-to-course journey with zero
