@@ -232,6 +232,20 @@ and results. The completed session API returned 17 persisted targets and
 identical. **Result — 1 passed in 3.0 min**, zero retries. The isolated
 database was removed after ownership and zero-client checks.
 
+### J3 name and results from detail to summary
+
+On the executable tree of protected `1899586`, Chromium followed
+«W-лесенка» from its catalogue card through Detail, Plan, the start screen,
+Live Engine v2, the completion summary and the Journal. Each surface
+displayed the workout name. The summary showed 17 sets and listed each
+result in order. The Journal and completed-session API showed the same
+17 planned targets and results, and both earlier cards stayed identical.
+
+This run advanced waits using the application's start-now control.
+The preceding elapsed-rest run covers all 16 automatic waits.
+**Result — 1 passed in 10.8 s.** The synthetic database was removed after
+verifying ownership and zero clients.
+
 ## J1 and J4 with a zero baseline in V5.6
 
 Chromium ran the fresh onboarding-to-course journey with zero
