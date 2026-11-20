@@ -723,9 +723,19 @@ for (const width of WIDTHS) {
       const rows = page.getByTestId("test-history-row");
 
       // Главная: строка «Тесты» ведёт в хаб; три карточки, у проходивших тест — результат и тренд.
+      const assessments = page.waitForResponse((response) =>
+        response.ok() && response.request().method() === "GET"
+        && new URL(response.url()).pathname === "/api/v2/assessments");
       await page.getByTestId("home-tests-row").click();
+      const { protocols } = await (await assessments).json() as {
+        protocols: { name: string; last_result: { performed_on: string } | null }[];
+      };
+      // The seed and the browser assertion can run on different Moscow calendar days.
+      const savedDate = protocols.find(({ name }) => name === PULLUPS_NAME)?.last_result?.performed_on;
+      if (!savedDate) throw new Error("Seeded pull-ups assessment date is missing");
+      expect(savedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       await expect(page.getByTestId("test-card")).toHaveCount(3);
-      await expect(card(PULLUPS_NAME).getByTestId("test-card-last")).toHaveText(`12 повт. · ${ruDate(mskDaysAgo(5))}`);
+      await expect(card(PULLUPS_NAME).getByTestId("test-card-last")).toHaveText(`12 повт. · ${ruDate(savedDate)}`);
       await expect(card(PULLUPS_NAME).getByTestId("test-card-trend")).toBeVisible();
       await expect(card(HANG_NAME).getByTestId("test-card-last")).toHaveText("Ещё не проходили");
       await expect(card(HANG_NAME).getByTestId("test-card-trend")).toHaveCount(0);
@@ -755,13 +765,14 @@ for (const width of WIDTHS) {
       await expect(rows.first()).toContainText("42.5 сек");
       await expect(rows.first()).toContainText("с резиной");
       await expect(page.getByTestId("test-chart-empty")).toBeVisible();
-      await form.getByLabel("Дата").fill(mskDaysAgo(2));
+      const hangDate = mskDaysAgo(2);
+      await form.getByLabel("Дата").fill(hangDate);
       await form.getByLabel("Результат, сек").fill("50");
       await form.getByRole("button", { name: "Записать результат" }).click();
       await expect(rows).toHaveCount(2);
       await expect(rows.nth(0)).toContainText("42.5 сек");
       await expect(rows.nth(1)).toContainText("50 сек");
-      await expect(rows.nth(1)).toContainText(ruDate(mskDaysAgo(2)));
+      await expect(rows.nth(1)).toContainText(ruDate(hangDate));
       await expect(page.getByTestId("test-chart")).toHaveAttribute("data-points", "2");
       await expectNoHorizontalOverflow(page, "Тест: история и график");
 

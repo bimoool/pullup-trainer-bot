@@ -1,9 +1,27 @@
 import { expect, nav, test } from "../fixtures/app";
 
+type EngineState = {
+  phase: string;
+  phase_deadline_at: number | null;
+  cursor: { block_index: number; set_index: number };
+};
+
 /** Current v2 paths on the deployed staging. Reprovision QA identities before each project. */
-test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", async ({ qa }) => {
+test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", async ({ page, qa }, testInfo) => {
+  const verifyRestDeadline = testInfo.config.metadata.verifyFreshRestDeadline === true;
+  if (verifyRestDeadline) {
+    // The first rest in course A is four minutes. Keep the real server deadline.
+    test.setTimeout(360_000);
+    await page.addInitScript(() => {
+      const start = OscillatorNode.prototype.start;
+      OscillatorNode.prototype.start = function (when = 0) {
+        const scheduledAtMs = Date.now() + (when - this.context.currentTime) * 1000;
+        start.call(this, when);
+        Object.assign(window, { freshRestCueAtMs: scheduledAtMs });
+      };
+    });
+  }
   const s = await qa("qa_fresh_active");
-  const { page } = s;
   await nav(page, "Планы").click();
   await expect(page.getByTestId("plans-now-empty")).toBeVisible();
   await nav(page, "Главная").click();
@@ -42,8 +60,33 @@ test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", asy
       await expect(page.getByTestId("engine-pending")).toHaveCount(0);
       await page.reload();
       await expect(page.getByTestId("engine-phase")).toHaveText("Отдых · пауза");
+      const resumed = verifyRestDeadline ? page.waitForResponse((response) =>
+        response.ok() && response.request().method() === "POST"
+        && /^\/api\/v2\/sessions\/live\/\d+\/events$/.test(new URL(response.url()).pathname)
+        && response.request().postDataJSON().events.some((event: { type: string }) => event.type === "resume")
+      ) : null;
       await page.getByTestId("pause-toggle").click();
       await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+      if (resumed) {
+        const { engine } = await (await resumed).json() as { engine?: { state: EngineState } };
+        const deadline = engine?.state.phase_deadline_at;
+        expect(engine?.state.phase).toBe("REST");
+        if (deadline == null) throw new Error("Resume did not return a rest deadline");
+        await expect.poll(async () => {
+          const cue = await page.evaluate(() =>
+            (window as unknown as { freshRestCueAtMs?: number }).freshRestCueAtMs);
+          return cue !== undefined && Math.abs(cue - deadline) < 1500;
+        }, { message: "WebAudio oscillator is scheduled at the resumed rest deadline" }).toBe(true);
+        await expect(phase).toHaveText("Пошёл", { timeout: 260_000 });
+        expect(Date.now()).toBeGreaterThanOrEqual(deadline - 1500);
+        await page.waitForResponse(async (response) => {
+          if (!response.ok() || response.request().method() !== "GET"
+              || new URL(response.url()).pathname !== "/api/v2/sessions/live/active") return false;
+          const { session } = await response.json() as { session?: { engine?: { state: EngineState } } };
+          const state = session?.engine?.state;
+          return state?.phase === "WORK" && state.cursor.block_index === 0 && state.cursor.set_index === 1;
+        }, { timeout: 25_000 });
+      }
     }
   }
   await expect(page.getByTestId("engine-confirm")).toBeVisible();
