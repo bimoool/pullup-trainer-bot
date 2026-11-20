@@ -70,7 +70,7 @@ test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", asy
       if (resumed) {
         const { engine } = await (await resumed).json() as { engine?: { state: EngineState } };
         const deadline = engine?.state.phase_deadline_at;
-        expect(engine?.state.phase).toBe("rest");
+        expect(engine?.state.phase).toBe("REST");
         if (deadline == null) throw new Error("Resume did not return a rest deadline");
         await expect.poll(async () => {
           const cue = await page.evaluate(() =>
@@ -84,7 +84,7 @@ test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", asy
               || new URL(response.url()).pathname !== "/api/v2/sessions/live/active") return false;
           const { session } = await response.json() as { session?: { engine?: { state: EngineState } } };
           const state = session?.engine?.state;
-          return state?.phase === "work" && state.cursor.block_index === 0 && state.cursor.set_index === 1;
+          return state?.phase === "WORK" && state.cursor.block_index === 0 && state.cursor.set_index === 1;
         }, { timeout: 25_000 });
       }
     }
