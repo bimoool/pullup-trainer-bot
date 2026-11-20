@@ -712,6 +712,24 @@ cancellation and return without replay for that tone. Physical Telegram
 backgrounding, actual audio timing on the device and watch behavior still
 require device evidence.
 
+### J5 live API timestamps across pause and resume
+
+Chromium drove a real 30-second rest on the executable tree of protected
+`901d94b` with a synthetic profile and two earlier workouts. The live API
+returned `warn_10s`, `count_3`, `count_2` and `count_1` at the expected
+offsets before the server deadline. `rest_end` and the next `work_start`
+shared the deadline in that order.
+
+The API returned an empty timeline on pause and preserved the remaining
+time through reload. After resume, the six timestamps aligned with the
+new server deadline. Instrumented Web Audio observed one scheduled
+phase-end tone within one second of that deadline. The rest expired
+naturally, and the Journal recorded five and four repetitions with one
+plan credit and both earlier cards intact.
+
+**Result — 1 passed in 39.4 s.** The synthetic database was removed after
+verifying ownership and zero clients.
+
 ## J10 date and result edits on Live Engine v2
 
 The [J10 regression](../../tests/test_web/test_j10_live_edit_convergence.py)
