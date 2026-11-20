@@ -229,6 +229,22 @@ card showed eight and nine. The Plan and both earlier cards stayed intact.
 **Result — 1 passed in 6.8 s.** The synthetic database was removed after
 verifying ownership and zero clients.
 
+### J7 matching titles for direct, planned and cloned workouts
+
+On the executable tree of protected `5107448`, Chromium created
+«Силовая J7» and completed it from its own detail and from its plan
+occurrence. The workout name matched on both start screens, both Live
+Engine screens and both completion summaries. Each summary showed eight
+and seven repetitions. The planned entry and its clone kept the same
+workout identity and results, and all three new Journal cards showed the
+original title.
+
+The planned session earned exactly one occurrence credit. The direct
+session and clone had empty plan-item links. The earlier Journal cards
+and course plan items stayed identical. **Result — 1 passed in 8.0 s.**
+The synthetic database was removed after verifying ownership and zero
+clients.
+
 ## J3 W-ladder with all rests elapsed
 
 The [fresh journey](../../webapp-frontend/e2e/scenarios/fix-wave1/fresh-install-content.spec.ts)
