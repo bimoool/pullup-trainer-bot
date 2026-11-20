@@ -607,6 +607,23 @@ The four cases passed within 89 focused backend checks. This receipt
 covers the supported complete-course API and stored flag. Device
 acceptance is tracked separately.
 
+### J11 K3 and the existing Journal recording form
+
+On protected `aeefc39`, four HTTP checks passed in 10.34 s. They exercised
+the early and allowed course dates and both sides of local midnight with
+legacy history. These requests use `source=plan` and a program inclusion.
+
+In a separate 5.9 s Chromium run, «Тренировку из моих» sent
+`source=backdated` with the selected workout and its entered results.
+The Journal showed the new card and kept both existing cards. The Plan
+matched its original response. PostgreSQL confirmed that the new record
+had no course inclusion or plan credit and its `spacing_violation` flag
+was false. The Journal form exercises the owned-workout recording path.
+Course-specific retrospective recording is covered by the HTTP checks.
+
+Both synthetic databases were removed after verifying ownership and zero
+clients.
+
 ## J5 pause and deadline on a profile with old plan history
 
 Chromium ran against API and frontend source `8efcbd2` on an isolated synthetic
