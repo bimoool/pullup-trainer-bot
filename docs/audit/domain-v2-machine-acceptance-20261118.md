@@ -1166,6 +1166,42 @@ database was removed after verifying ownership and zero clients.
 This checks the runner on the listed synthetic profiles. Staging rehearsal,
 backup restore and native Telegram acceptance remain open.
 
+### J2 cohort reads before and after Plan convergence
+
+On protected `7016323`, the real HTTP routes read Journal lists, calendar,
+Profile and the complete Analytics response on six synthetic profiles.
+The reads used one 56-day range and covered the baseline, dry run, apply
+and second apply. Each profile returned identical JSON at all four stages.
+Journal, calendar and Profile counts agreed with both Analytics totals
+and with the sums of Analytics weekly and category counts.
+
+| Profile | Workouts on every read surface |
+|---|---:|
+| Fresh with a Plan | 0 |
+| Aged, current-format Plan | 2 |
+| Aged, legacy inclusion snapshot | 2 |
+| Expired trial | 2 |
+| Active, no Plan | 0 |
+| Active with a synthetic Stars subscription | 2 |
+
+The dry run predicted 24 changes without writing any rows. Apply made
+the same 24 changes: one snapshot repair, 15 weeks and eight Plan items.
+The second apply and final dry run both reported zero changes. All eight
+historical sessions and 72 set results remained identical, along with
+subscription rows and expiry values, program access and session credit
+links. The Stars row was created in the synthetic fixture without a
+payment provider. This check covered Plan convergence with native
+training rows. The mixed legacy/v2 history check above covers the
+separate history convergence path.
+
+**Result — passed on a migration-only synthetic PostgreSQL database.**
+The first harness attempt expected live-session titles on fixtures
+written by the historical logger without Plan item links. The passing
+check compares the returned titles and all other response fields before
+and after convergence. The database was removed after verifying ownership
+and zero clients. Staging rehearsal, restore and physical-device evidence
+remain open.
+
 ### Follow-up at `32c9a1a`: active v1 session across aged plan convergence
 
 The [in-flight regression](../../tests/test_services/test_plan_convergence_v2.py)
