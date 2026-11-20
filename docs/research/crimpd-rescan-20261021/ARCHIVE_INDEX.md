@@ -68,6 +68,14 @@ two `НЕДОСТУПНО` rows. These counts describe the historical registers
 at the pinned head. The review used aggregate status fields and checked
 neither the underlying media nor the reference app.
 
+All 253 observation references in the coverage register resolve to 112
+distinct observation rows. Of the 87 OBSERVED scenarios, 39 link only
+to observations whose recorded scenario ID differs from the coverage
+row's ID. Another 37 link to a mix of matching and different scenario
+IDs, and 11 link only to matching IDs. Related observations may support
+a scenario. They require a scope check before they can establish
+direct coverage of that scenario.
+
 The later November 10 audit leaves C09 (skill-template instantiation)
 and C10 (completion-to-plan-credit comparison) UNKNOWN. Keep these
 items open in #348 and use the November report for its actual execution
