@@ -524,6 +524,21 @@ low-level Live Engine fixture whose manual form offered one set. The
 passing run built the two-set workout through the normal UI. The
 isolated database was removed after verifying ownership and zero clients.
 
+### J8 preserving the historical record after renaming its workout
+
+On the executable tree of protected `f772d3f`, Chromium logged an owned
+workout for the previous day and renamed its definition through Builder.
+After reload, the Journal showed the original title and the same eight
+and seven repetitions. The session API retained the prescription
+snapshot, workout link and block results. Opening the linked workout
+showed its new name and one record in its history.
+
+Both original Journal cards and the Plan response stayed identical.
+PostgreSQL confirmed that the new backdated record had no course,
+plan credit or spacing-violation flag. **Result — 1 passed in 6.3 s.**
+The synthetic database was removed after verifying ownership and zero
+clients.
+
 ## J9 external activity alongside a credited course workout
 
 The [J9 regression](../../tests/test_web/test_j9_external_activity_isolation.py)
