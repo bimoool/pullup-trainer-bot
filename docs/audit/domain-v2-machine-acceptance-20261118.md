@@ -608,6 +608,26 @@ stayed inside the course detail screen. The passing scenario returned to
 the main screen before opening Plan. Both synthetic databases were removed
 after verifying ownership and zero clients.
 
+### Moving the same activity across a week and month boundary
+
+On the executable tree of protected `afe36ad`, Chromium completed one
+nine-set V5.6 workout and checked its Plan credit on each of two synthetic
+profiles, one fresh and one with two prior course records. Each profile
+logged a 45-minute run on October 31, 2026, then edited the same entry to
+60 minutes of cycling on November 2. The October calendar and Journal
+lost the activity, and the November calendar and Journal gained it.
+
+Both weekly Analytics series matched the API before and after the edit.
+The extra workout and 45 minutes in the October 26 week moved to one
+extra workout and 60 minutes in the November 2 week. The credited
+course, previous Journal cards, full Plan and exercise panels retained
+their values. The external activity had no plan item.
+
+**Result — 1 passed in 8.4 s on the profile with history and 1 passed in
+9.3 s on the fresh profile.** Each synthetic database was removed after
+verifying ownership and zero clients. Native Telegram acceptance remains
+open.
+
 ## J12 future-week credit on a profile with old plan history
 
 Chromium ran against the application built from
