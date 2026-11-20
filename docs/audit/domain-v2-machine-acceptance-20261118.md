@@ -680,6 +680,38 @@ after verifying ownership and zero clients. This was a Chromium
 visibility simulation with a real server clock. Telegram device
 backgrounding, audible cue timing and watch behavior remain open.
 
+### J5 offline interval pause on a profile with history
+
+Chromium used the executable tree of protected `b70ac98` on a 23-day-old
+profile with two earlier workouts. It paused the first interval while
+offline, closed the tab and waited 25 real seconds. On reopening, the
+client sent the saved pause before projecting the session. A separate
+browser context saw the same paused session and remaining time.
+
+After resuming, the interval finished once and Plan retained a single
+credit. The Journal added one card and preserved both earlier cards.
+The queue contained no unsent work on the optional review screen. Its
+storage key cleared after saving the review. The first harness assertion
+checked for deletion while the optional review screen was still open.
+
+**Result — 1 passed in 51.5 s.** The synthetic database was removed after
+verifying ownership and zero clients.
+
+### J5 audio timeline and phase-end playback
+
+The shared engine vector verifies rest warning, countdown and rest-end
+timestamps, including their order at the next work start. It also verifies
+an empty timeline during pause. On protected `901d94b`, the Python suite
+passed 36 cases and the TypeScript suite passed 34. The phase-end Web Audio
+unit test passed one case covering timing, cancellation and volume.
+
+The session API exposes hook timestamps from the engine. The current
+live screen plays the existing phase-end tone based on the server deadline
+and cancels it while hidden. The paired Chromium simulation above verifies
+cancellation and return without replay for that tone. Physical Telegram
+backgrounding, actual audio timing on the device and watch behavior still
+require device evidence.
+
 ## J10 date and result edits on Live Engine v2
 
 The [J10 regression](../../tests/test_web/test_j10_live_edit_convergence.py)
