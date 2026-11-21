@@ -9,8 +9,8 @@ files `06-release-v2.spec.ts` and `07-minimal-signup.spec.ts` in both browser pr
 It accepts only an exact candidate SHA: no journey/project filter or provisioning
 bypass. Each browser is provisioned separately; deployment and QA serialize.
 Diagnostic runs of the older `staging-qa.yml` do not count as production release
-evidence. Full functional E2E remains a separate mandatory CI check, and real
-Telegram/iPhone acceptance remains separate from browser emulation.
+evidence. Full functional E2E remains a separate mandatory CI check. Native
+Telegram acceptance has its own evidence requirement.
 
 Current v2 smoke scenarios are `06-release-v2.spec.ts` (grep `R-V2`). Reprovision the
 registered reserved QA identities before **each browser project**; run projects separately,
@@ -20,8 +20,8 @@ still describe v1 controls and are not evidence for current v2 execution.
 Staging traces are disabled: they capture signed launch URLs and authentication
 headers even when the bot token itself is never printed. Keep screenshots/video of
 synthetic profiles and the allowlisted API status metadata as evidence. Do not
-upload traces from a live owner account. The native Telegram/iPhone check remains
-separate from WebKit emulation.
+upload traces from a live owner account. Record the native Telegram result
+separately from WebKit emulation.
 
 # Staging QA harness
 
@@ -130,7 +130,7 @@ The second case explicitly launches supported client version6.1 to exercise the
 browser's real confirm fallback: dismiss keeps the first set, ordinary submission
 continues to2/10, accept ends volume with the technique reason. It does not replace
 Telegram SDK/window.confirm/API, and does not prove native8.0 popup behavior.
-Real Telegram/iPhone acceptance remains a separate release gate. Every browser
+Native Telegram acceptance remains a separate release gate. Every browser
 project receives fresh profiles; one browser's live state is never reused by the
 other.
 
@@ -221,8 +221,13 @@ described above, not evidence that raw reports are safe.
 A staging-affecting fix is **DONE** only when all hold: (1) verified on the **actual staging deployment**, not a local
 copy; (2) with **realistic state** (`qa_aged_active` / owner-like data, not only a fresh user); (3) via the **full UI
 journey** (no DB/API shortcuts); (4) **persistence** checked (reload and fresh launch); (5) **compared with the reference**
-(`product-reference`/`crimpd-reference` skills); (6) **the owner's own device check** on the real iPhone. Green CI alone,
-or WebKit emulation alone, is not DONE.
+(`product-reference`/`crimpd-reference` skills); (6) **native Telegram acceptance** in the client and by the
+executor designated for the release.
+
+For the current #309/#302 acceptance, the [owner's decision](https://github.com/bimoool/pullup-trainer-bot/issues/377#issuecomment-6897382093)
+designates Codex in Telegram Desktop on macOS for item (6). Record the installed
+revision, client and observed outcome in the checkpoint. Use a previously
+approved QA profile for steps that write training, history or progression.
 
 ## Historical validation (original harness), and limits
 
