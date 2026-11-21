@@ -3,9 +3,14 @@
 Index: [README.md](README.md). Each journey asserts **observable product behaviour** (what the
 user sees and what the persisted history/analytics say), never just status codes. Layers:
 **D** pure domain (pytest, no DB) · **S** service on real Postgres · **W** API (`tests/test_web/`) ·
-**E** Playwright E2E (`webapp-frontend/e2e/`) · **R** real iPhone (`docs/IPHONE_QA_CHECKLIST.md`).
+**E** Playwright E2E (`webapp-frontend/e2e/`) · **R** native Telegram in the client approved for the release.
 Every journey runs on a **fresh** profile and, where marked ⟳, also on an **aged** profile
 (MIGRATION §8). A test is accepted only if reverting the fix makes it fail (`docs/testing.md`).
+
+For #309/#302, Codex runs **R** in Telegram Desktop on macOS under the
+[current acceptance decision](https://github.com/bimoool/pullup-trainer-bot/issues/377#issuecomment-6897382093).
+Follow the [native evidence rules](../STAGING_QA_HARNESS.md#release-rule) and
+record the installed revision with each observed result.
 
 | ID | Journey | Layers | Must observe |
 |---|---|---|---|
