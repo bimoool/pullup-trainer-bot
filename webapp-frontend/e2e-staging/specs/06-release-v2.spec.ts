@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, nav, test } from "../fixtures/app";
 
 type EngineState = {
@@ -5,6 +6,16 @@ type EngineState = {
   phase_deadline_at: number | null;
   cursor: { block_index: number; set_index: number };
 };
+
+async function configureCourse(page: Page) {
+  await page.getByTestId("course-input-volume_capacity").fill("10");
+  await page.getByTestId("course-volume-band-name").fill("QA band");
+  await page.getByTestId("course-volume-band-colour").fill("blue");
+  await page.getByTestId("course-volume-band-attachment").fill("bar");
+  await page.getByTestId("course-volume-band-position").fill("foot");
+  await page.getByTestId("course-strength-band-bodyweight").check();
+  await page.getByTestId("course-setup-save").click();
+}
 
 /** Current v2 paths on the deployed staging. Reprovision QA identities before each project. */
 test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", async ({ page, qa }, testInfo) => {
@@ -33,13 +44,7 @@ test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", asy
   await expect(page.getByTestId("plan-week-progress").first()).toHaveText(/Текущая неделя · 0 из 2/);
   await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
   await expect(page.getByTestId("course-setup-required")).toBeVisible();
-  await page.getByTestId("course-input-volume_capacity").fill("10");
-  await page.getByTestId("course-volume-band-name").fill("QA band");
-  await page.getByTestId("course-volume-band-colour").fill("blue");
-  await page.getByTestId("course-volume-band-attachment").fill("bar");
-  await page.getByTestId("course-volume-band-position").fill("foot");
-  await page.getByTestId("course-strength-band-bodyweight").check();
-  await page.getByTestId("course-setup-save").click();
+  await configureCourse(page);
   await expect(page.getByText("Блок 1: 7/7/7/7+")).toBeVisible();
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   const phase = page.getByTestId("engine-phase");
@@ -107,8 +112,62 @@ test("R-V2 fresh: full course, pause/reload, journal and rest gate persist", asy
   s.assertClean();
 });
 
+async function verifyAgedRestPersistence(page: Page) {
+  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+  const setup = page.getByTestId("course-setup-required");
+  const start = page.getByRole("button", { name: "Начать", exact: true });
+  await expect(setup.or(start).first()).toBeVisible();
+  if (await setup.isVisible()) await configureCourse(page);
+  await start.click();
+
+  const phase = page.getByTestId("engine-phase");
+  const pending = page.getByTestId("engine-pending");
+  await expect(phase).toHaveText(/Приготовься|Пошёл/);
+  if ((await phase.textContent())?.trim() !== "Пошёл") await page.getByTestId("engine-skip").click();
+  await expect(phase).toHaveText("Пошёл");
+  await page.getByLabel("Результат подхода").fill("5");
+  await page.getByTestId("engine-submit").click();
+  await expect(phase).toHaveText("Отдых");
+  await expect(pending).toHaveCount(0);
+
+  type Session = { id: number; engine: { state: EngineState & { paused_remaining_ms: number | null } } };
+  const pauseResponse = page.waitForResponse((response) =>
+    response.ok() && response.request().method() === "POST"
+    && /^\/api\/v2\/sessions\/live\/\d+\/events$/.test(new URL(response.url()).pathname)
+    && response.request().postDataJSON().events.some((event: { type: string }) => event.type === "pause")
+  );
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase).toHaveText("Отдых · пауза");
+  const paused = await (await pauseResponse).json() as Session;
+  expect(paused.engine.state).toMatchObject({ phase: "REST", phase_deadline_at: null });
+  expect(paused.engine.state.paused_remaining_ms).toBeGreaterThan(0);
+
+  const activeResponse = page.waitForResponse((response) =>
+    response.ok() && response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/v2/sessions/live/active"
+  );
+  await page.reload();
+  await expect(phase).toHaveText("Отдых · пауза");
+  const reopened = await (await activeResponse).json() as { session: Session | null };
+  expect(reopened.session).toMatchObject({
+    id: paused.id,
+    engine: {
+      state: {
+        phase: "REST",
+        phase_deadline_at: null,
+        cursor: paused.engine.state.cursor,
+        paused_remaining_ms: paused.engine.state.paused_remaining_ms,
+      },
+    },
+  });
+
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase).toHaveText("Отдых");
+  await expect(pending).toHaveCount(0);
+}
+
 for (const identity of ["qa_aged_active", "qa_aged_legacy_snapshot"] as const) {
-  test(`R-V2 aged ${identity}: current plan survives reload and fresh launch`, async ({ qa }) => {
+  test(`R-V2 aged ${identity}: current plan survives reload and fresh launch`, async ({ qa }, testInfo) => {
     const s = await qa(identity);
     for (let pass = 0; pass < 3; pass += 1) {
       await nav(s.page, "Планы").click();
@@ -116,6 +175,9 @@ for (const identity of ["qa_aged_active", "qa_aged_legacy_snapshot"] as const) {
       await expect(s.page.getByRole("button", { name: /^Начать: Подтягивания/ }).first()).toBeVisible();
       if (pass === 0) await s.page.reload();
       if (pass === 1) await s.relaunch();
+    }
+    if (testInfo.config.metadata.verifyAgedRestPersistence === true) {
+      await verifyAgedRestPersistence(s.page);
     }
     s.assertClean();
   });
