@@ -1,0 +1,45 @@
+obs_id,итог,основание/доказательство
+OBS-0001,воспроизведено,"eens/rescan_000_launch.png; rescan2_140_dumpsys_package_crimpd.txt (версия 8.5.3, versionCode 8050300 — воспроизведено 2026-10-23)"
+OBS-0005,воспроизведено,воспроизведено: rescan3_630_edge_lift_test_description.txt
+OBS-0009,воспроизведено,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md
+OBS-0015,воспроизведено,10-24: после сохранённых логов +10/+5 новая форма лога снова стартовала с 0 (rescan3_400_log_form.png и guard +N при N тапах от 0)
+OBS-0017,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.5
+OBS-0029,воспроизведено,evidence/rescan_131_custom.png [ФАЙЛ ОТСУТСТВУЕТ]; воспроизведено: rescan3_640_queue_b_protocols.md
+OBS-0032,воспроизведено,воспроизведено: rescan3_300/301 + текст Settings (2026-10-24)
+OBS-0034,воспроизведено,воспроизведено: rescan3 вкладки планов (текст «You do not have any upcoming training plans…» 2026-10-24)
+OBS-0036,воспроизведено,evidence/rescan_187_volume_edit.png; воспроизведено на тестовом плане: evidence/rescan3_740_r6_r7_protocol.md
+OBS-0040,воспроизведено,"воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.1–2, 6"
+OBS-0041,воспроизведено,воспроизведено: evidence/rescan3_620_maxhangs_levels.png; rescan3_621_deadlift_rpe.png
+OBS-0043,воспроизведено,воспроизведено: rescan3_621_deadlift_rpe.png
+OBS-0049,воспроизведено,воспроизведено: rescan3_760_custom_exercise_search.png
+OBS-0050,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.6
+OBS-0051,воспроизведено,"воспроизведено: меню прочитано 2026-10-24 (Home, Training Plans, Training History, Analytics, Profile, Help, Settings, Logout)"
+OBS-0055,воспроизведено,; воспроизведено 2026-10-24: evidence/rescan3_430_current_result_rule_protocol.md (E1)
+OBS-0064,воспроизведено,воспроизведено: rescan3_660_vibrator_crimpd_lines.txt
+OBS-0066,заблокировано,Logout запрещён (ограничения задания); условие: одноразовый аккаунт
+OBS-0067,воспроизведено,"воспроизведено: templates-schedules.csv (25 уровней, 2026-10-24)"
+OBS-0068,воспроизведено,воспроизведено: rescan3 шторка фильтров 2026-10-24 (чипы Category/Equipment/Favorites/My Workouts/Assessments/Home Workouts)
+OBS-0069,воспроизведено,воспроизведено: rescan3_770_offline_cold_start_home.png
+OBS-0070,воспроизведено,воспроизведено: rescan3_650_narrow_home.png
+OBS-0071,воспроизведено,воспроизведено: templates-schedules.csv
+OBS-0072,воспроизведено,воспроизведено: evidence/tpl_schedules/BoulderingMastery__*.json (2026-10-24)
+OBS-0078,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.3
+OBS-0082,воспроизведено,воспроизведено: rescan3_750_reps_wheel_propagation.png
+OBS-0086,воспроизведено,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md
+OBS-0087,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.3
+OBS-0088,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.4
+OBS-0091,воспроизведено,воспроизведено частично: rescan3_781_onearm_with_result_8kg.jpg
+OBS-0092,воспроизведено,воспроизведено: templates-matrix.csv
+OBS-0093,уточнено,templates-schedules.csv (v2)
+OBS-0094,воспроизведено,воспроизведено: evidence/rescan3_740_r6_r7_protocol.md
+OBS-0097,воспроизведено,воспроизведено: evidence/rescan3_740_r6_r7_protocol.md
+OBS-0099,воспроизведено,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md
+OBS-0100,воспроизведено,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.5
+OBS-0101,воспроизведено,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md
+OBS-0102,воспроизведено,воспроизведено: rescan3_210_favorites_protocol.md
+OBS-0103,опровергнуто,"rescan3_430, OBS-0129"
+OBS-0105,воспроизведено,дено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.3 (в одной тренировке; между двумя тренировками не повторялось)
+OBS-0107,воспроизведено,"воспроизведено: rescan3_223 + протокол R02 (список планов в Add To Existing Plan, без выбора)"
+OBS-0108,воспроизведено,воспроизведено: rescan3_631_finger_strength_test_description.txt
+OBS-0110,воспроизведено,воспроизведено: rescan3_830_docs_nav_menu.png
+OBS-0128,заблокировано,жесты TalkBack — устройство
