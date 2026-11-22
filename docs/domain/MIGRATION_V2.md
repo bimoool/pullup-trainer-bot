@@ -78,9 +78,13 @@ history read by any v2 view.
 **Implemented in Wave 3b (#308), revision `a7e2c5b9d1f4`:** columns `legacy_id`, `superseded_at`, `superseded_reason`,
 `UNIQUE (origin, legacy_id)`; dual-write in `LegacyConvergenceRepository` (called by `WorkoutRepository`,
 `ElectiveWorkoutRepository`, workout deletion and admin reset); deploy-time convergence
-`python scripts/backfill_multi_program.py --converge-history [--apply]` (dry-run by default, per-user transaction, apply-again = 0,
-legacy tables never written). Deploy order: `alembic upgrade head` → `--converge-history` (review the dry-run) → `--converge-history --apply`
-→ `up -d`. Schema downgrade drops the three columns (copies stay); re-upgrade + `--apply` restores keys and supersessions.
+`python scripts/backfill_multi_program.py --converge-history` discovers history changes in read-only mode.
+For an admitted rehearsal, dry-run the approved scope with `--converge-history --user-ids <confirmed-ids>`,
+then add `--apply` for the same IDs. Repeat the scoped apply and verify zero changes. Apply uses a
+per-user transaction and preserves legacy tables. The CLI refuses apply without an explicit list.
+Run convergence after the target schema is ready and before starting the rehearsed application.
+Schema downgrade drops the three columns (copies stay). After re-upgrade, a scoped apply restores
+keys and supersessions.
 Exceptions after a downgrade (elective guard, PR #326): an elective copy that lost its key and was edited, and new electives
 of a user **without a plan** whose workout copies lost their keys, are reported as unresolved instead of re-keyed/created
 (no duplicate, no resurrection; `docs/STAGING_RC_REHEARSAL.md` §8 «Фикс»). The runbook rollback is `pg_restore`.
@@ -98,11 +102,12 @@ of a user **without a plan** whose workout copies lost their keys, are reported 
 4. set inclusion `awaiting_assessment` only if no valid assessment **and** no completed main
    session (aged users with history are never pushed back to assessment).
 
-Invoked by the deploy-time script for all users and by login/`GET /plan` **only** via the same
-function (no other lazy writes). **Wave 1b (#304):** the plan part is `app.services.plan_convergence
-.converge_user_plan` (steps 2–3 here; rules in PROGRAM_PLAN_V2 §10.8); the deploy-time runner is
-`scripts/repair_plan_convergence.py --all [--apply]` (dry-run by default, per-user transaction, guards:
-history/subscription/access unchanged, only the allowed #304 mutations; apply-again = 0 mutations). Revision
+Login and `GET /plan` use the same runtime convergence function. **Wave 1b (#304):** the plan part
+is `app.services.plan_convergence.converge_user_plan` (steps 2–3 here; rules in PROGRAM_PLAN_V2 §10.8).
+`python scripts/repair_plan_convergence.py --all` discovers changes across all users with plans and
+rolls back its transactions. In an admitted rehearsal, dry-run `--user-ids <confirmed-ids>`, then add
+`--apply` for the same IDs and verify zero mutations on reapply. The CLI refuses `--all --apply`.
+Guards preserve history, subscriptions and access and permit only the #304 mutations. Revision
 `d8a3c6f1e2b4` itself only adds columns/tables and backfills literal SQL (`plan_items.source`,
 `workout_definition_id = complex_id`, inclusion `status`, `training_sessions.plan_item_id` for single-link
 sessions, the «Подтягивания» slots/frequency/constraints/assessment); downgrade drops exactly those (explicit
