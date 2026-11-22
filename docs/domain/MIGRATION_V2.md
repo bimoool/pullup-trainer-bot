@@ -35,9 +35,13 @@ separate, later decision.
 2. **Backfill** — deterministic data migration or script (§3), idempotent, natural keys.
 3. **Converge** — `converge_user_domain_v2(user, today)` (§5) makes each aged user's derived
    state equal to what a fresh user would get with the same history.
-4. **Dual-read** — new readers behind a flag (`DOMAIN_V2_PLAN`, `DOMAIN_V2_ENGINE`,
-   `DOMAIN_V2_HISTORY`), compared to old readers by an invariant checker in staging.
-5. **Cutover** — flag on; writers switch; legacy writers redirected to v2 (§4).
+4. **Compatibility** — compare the canonical and legacy paths during staging rehearsal,
+   including in-flight sessions and cached clients (§6). The original
+   `DOMAIN_V2_PLAN`, `DOMAIN_V2_ENGINE` and `DOMAIN_V2_HISTORY` names were
+   planning placeholders. The current application selects the Live Engine by
+   session version and uses the history writers described in §4.
+5. **Cutover** — complete the staging and native acceptance gates in §8 before
+   changing or retiring the retained legacy paths.
 6. **Freeze** — legacy tables read-only (DB grants or repository guard).
 
 ## 3. Deterministic backfill rules
@@ -109,9 +113,12 @@ rehearsal profiles.
 
 ## 6. In-flight sessions and clients
 
-- `active` sessions at cutover keep `engine_version = 1` and finish on the v1 path; new starts use v2.
-- Old Mini App bundles (cached WebView) talking to new API: v2 endpoints are additive; v1 live
-  endpoints remain until Wave 4 acceptance; offline queues from v1 clients are accepted by v1 endpoints.
+- Each in-flight session keeps its stored `engine_version`. Current Mini App
+  starts request v2 by default. The per-client `pullup:live-engine-version`
+  override can request v1 for a new start.
+- Keep the v1 endpoints for cached Mini App bundles and their offline queues
+  until Wave 4 sign-off. Rehearse both the cached-client path and the versioned
+  in-flight session on the schema used during cutover.
 
 ## 7. Subscription / access preservation
 
@@ -131,11 +138,14 @@ Rehearsal (per wave, mandatory before staging cutover), following
 - pass criteria: 04 = zero changes; invariant checker clean; acceptance journeys J1–J12 pass on
   both a fresh and an aged profile (J2).
 
-Rollback: schema is additive, so **code rollback** to the previous image is always safe; backfill
-writes only new columns/tables and is not reverted. Flags allow turning a reader/writer off without
-redeploy. Dual-write keeps legacy tables authoritative until cutover, so rollback before cutover
-loses nothing. After cutover, rollback = flag off + legacy reads (native rows written meanwhile are
-already mirrored to legacy by dual-write until freeze; freeze happens only after Wave 4 sign-off).
+For code rollback acceptance, rehearse the exact previous image against a
+restored staging copy with the target schema. Verify that an existing session can
+resume, completion writes a single result and credit, and legacy reads preserve
+history. Record the image identity, schema revision and results with the
+[staging acceptance evidence](../STAGING_QA_HARNESS.md#release-rule).
+The per-client Live Engine override only selects the engine for a new start.
+Operational rollback follows the separately authorized, guarded procedure in the
+[production runbook](../PRODUCTION_RUNBOOK.md). Keep the legacy paths through Wave 4 sign-off.
 
 **Schema downgrade is not code rollback.** Downgrading the schema below a revision that created v2
 tables (first: `b7d2e9f4a1c3`, WORKOUT §9.13) drops those tables: v2 version history created after
