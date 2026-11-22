@@ -1,7 +1,15 @@
 # Staging runbook: aged-state convergence (#301)
 
-The owner approved this on 2026-10-06. It is the staging acceptance for the narrow self-heal of an active
-inclusion whose snapshot has a **missing or empty** `program_items` (the owner's «Неделя 4 · 0 из 0»).
+> **Historical procedure for #301.** The steps below record the 2026-10-06
+> staging procedure. [#301](https://github.com/bimoool/pullup-trainer-bot/issues/301)
+> is closed. For the current aged-profile acceptance, follow the
+> [#309 rehearsal guide](domain/MIGRATION_V2.md#8-rehearsal-and-rollback) and
+> [the release rule](STAGING_QA_HARNESS.md#release-rule). They use an admitted
+> candidate on guarded staging and record the installed revision and results
+> in Telegram Desktop on macOS.
+
+This procedure covered the narrow self-heal of an active inclusion whose snapshot
+has a **missing or empty** `program_items` (the owner's «Неделя 4 · 0 из 0»).
 
 The fix is one canonical function, `PlanWeekService.converge_inclusion_snapshot`. The runtime calls it on
 every `GET /plan`, and the targeted tool `scripts/repair_plan_convergence.py` calls the same code. Behaviour
