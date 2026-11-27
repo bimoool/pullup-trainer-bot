@@ -1,0 +1,14 @@
+Тренировка,Упражнение/блок,Подходы × повторы,Отдых,Строка нагрузки на странице,Связь с тестом,Варианты A/B/C на странице,"Время, мин",Где встречается,Источник
+Boulder Campus,Campusing Boulders,4 × 3,3:00 между повторами и 3:00 между подходами,"Target grade: 5–6 grades below max (по грейду, не по тесту)",нет (привязка к максимальному грейду из Settings/профиля — не проверено),нет,45,"Bouldering Mastery A/B/C, Power (недели 4–5)",workout_protocols/Boulder_Campus.json
+Power Pulls - A,Jump Pull-up,5 × 3,1:00 между подходами,нет,нет,"A/B/C Variation (три отдельные тренировки A, B, C)",10,"Power A–C",workout_protocols/Power_Pulls_-_A.json
+Power Pulls - B,Assisted Power Pull-up (резина),5 × 3,1:00,нет (в описании: не добавлять вес),нет,A/B/C Variation,10,Power,workout_protocols/Power_Pulls_-_B.json
+Power Pulls - C,Power Pull-up,5 × 3,3:00,нет,нет,A/B/C Variation,20,Power,workout_protocols/Power_Pulls_-_C.json
+Limit Power - Intermediate (Campus Laddering),"Campus 1-2-3, 1-3-5, 1-4-5",4 подхода × 1 повтор,2:00,нет (кампус-перекладины),нет; порог входа: ≥6C+/V5,нет,30,Power A (нед.1–6),workout_protocols/Limit_Power_-_Intermediate.json
+Limit Power - Advanced,"Campus 1-3-5-7-9, 1-4-7, 1-5-7",4 × 1,2:00,нет,нет; порог: ≥7B/V8 и опыт кампуса,нет,30,Power B,workout_protocols/Limit_Power_-_Advanced.json
+Limit Power - Elite,"Campus 1-4-7, 1-5-8",6 × 1,2:00,нет,нет; порог: 8A+/V12,нет,30,Power C,workout_protocols/Limit_Power_-_Elite.json
+7:3s 50% (Deadhang repeaters),Dead Hang: 20mm Edge,6 подходов × 12 повторов по 7 с,"3 с между повторами, 4:00 между подходами",50% of maximum (−15 кг при тесте +40 кг и массе 70 кг),Finger Strength Test (формула p×(масса+результат)−масса: 0.5×110−70=−15),A 50% / B 55% / C 60%,40,"Sport Power Endurance B/C (нед.2–6), Bouldering Fitness",workout_protocols/7_3s_50pct.json
+7:3s 60%,то же,6 × 12 × 7 с,3 с / 4:00,60% of maximum (−4 кг; 0.6×110−70=−4),Finger Strength Test,A 50 / B 55 / C 60,40,Sport Power Endurance,workout_protocols/7_3s_60pct.json
+7:3s 80%,Dead Hang: 20mm Edge,6 подходов × 5 повторов по 7 с,3 с / 3:00,80% of Maximum (+18 кг; 0.8×110−70=18),Finger Strength Test,A 80 / B 82.5 / C 85,25,Bouldering Fitness B/C (нед.6),workout_protocols/7_3s_80pct.json
+Max Hangs 85/90/95%,Deadhang 6 подходов по 10 с,6 × 1 × 10 с,—,85/90/95% of maximum (+24/+29/+35 кг при тесте +40 кг),Finger Strength Test,A 85 / B 90 / C 95,20,"Finger Strength B–D, Bouldering Mastery B/C",rescan3_620…
+Weighted Pull Ups 85/90/95%,3 pull-ups × 5 sets,3×5,—,p% of 2RM (+X кг),Weighted Pull-up Test (2RM),A 85 / B 90 / C 95,15,"Power, Pull-up Strength B/C, One-arm, Bouldering Mastery B/C",rescan3_420…
+Deadlift - A/B/C,Deadlift,3 × 5,3:00,"5/10, 7/10, 8/10 RPE (числа нет)",нет (RPE-шкала),"A 5/10, B 7/10, C 8/10 RPE",15,каталог,rescan3_621_deadlift_rpe.png
