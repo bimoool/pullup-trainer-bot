@@ -1411,5 +1411,12 @@ count for the original week in both cases.
 The plan convergence module and v1 compatibility check passed on isolated
 synthetic PostgreSQL (**14 passed in 13.84 s**, no skips). The owned database was
 removed after checking ownership and zero clients. This extends the synthetic
-HTTP evidence to one planned case. Workouts from a program main slot, cached
-WebView and the cutover rehearsal remain open.
+HTTP evidence to one planned case.
+
+The [legacy course regression](../../tests/test_services/test_aged_course_live_convergence.py)
+starts from the two legacy course rows for blocks A and B. At the month boundary
+convergence moves the active session to the third main occurrence of the same week.
+At the week boundary it keeps the session linked to the frozen aggregate. In both
+cases replay opens the same session, the Journal preserves its prescription and
+all results, and completing twice applies progression and plan credit once.
+Cached WebView and the staging cutover rehearsal remain open.
