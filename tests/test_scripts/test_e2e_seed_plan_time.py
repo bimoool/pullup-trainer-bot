@@ -18,6 +18,7 @@ from app.db.models_program import Exercise, PlanWeek, SessionPlanItem, TrainingP
 from app.db.repositories.users import UserRepository
 from app.web import routes_v2
 from scripts import e2e_seed
+from tests.test_web._premium import grant_premium
 from tests.test_web._v2_client import v2_get, v2_post
 
 TG = 990_078  # independent of the finite visual-fixture identities
@@ -173,6 +174,9 @@ async def test_plan_seed_rows_are_in_api_current_week(
     if scenario == "live_engine":
         # The same row selection as startPlanned: current week, then workout title.
         row = next(item for item in manual if item["complex_name"] == "Движок: подходы")
+        # Seed onboarding uses the frozen calendar, but Live checks access on its real clock.
+        await grant_premium(session, user)
+        await session.commit()
         started = await v2_post(
             session,
             TG,
